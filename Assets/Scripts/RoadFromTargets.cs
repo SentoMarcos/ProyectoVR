@@ -45,6 +45,19 @@ public class RoadFromTargetsSticky : MonoBehaviour
     [Tooltip("Si hay ≥3 puntos, conecta el último con el primero (circuito cerrado). El nuevo detectado pasa a ser el último.")]
     public bool closeLoopWhenAtLeast3 = true;
 
+    public enum ConnectMode
+    {
+        // Comportamiento actual: conecta todos los puntos en orden (y opcionalmente cierra el bucle)
+        Sequential,
+        // Conecta solo el primero detectado con el último (2 puntos)
+        FirstToLastOnly,
+        // Conecta únicamente los dos últimos detectados (cuando llega uno nuevo, pasa a unirse con el anterior último)
+        LastTwoOnly,
+    }
+    [Header("Modo de conexión entre puntos")]
+    [Tooltip("Cómo se conectan los puntos: Sequential (todos), FirstToLastOnly (solo primero-último), LastTwoOnly (solo los dos últimos).")]
+    public ConnectMode connectMode = ConnectMode.LastTwoOnly;
+
     [Header("Plano y UVs")]
     /// <summary>Proyecta la línea central sobre un plano estimado para evitar desniveles no deseados.</summary>
     public bool flattenToTargetsPlane = true;
@@ -359,7 +372,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 var frozen = detectionOrderManager.GetFrozenPoints();
                 if (frozen != null && frozen.Count >= 2)
                 {
-                    pts = MaybeCloseLoop(frozen);
+                    pts = ApplyConnectMode(frozen);
                     RenderOrCache(pts);
                     return;
                 }
@@ -367,7 +380,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             var ordered = detectionOrderManager.GetOrderedPoints();
             if (ordered != null && ordered.Count >= 2)
             {
-                pts = MaybeCloseLoop(ordered);
+                pts = ApplyConnectMode(ordered);
                 RenderOrCache(pts);
                 return;
             }
@@ -399,7 +412,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             return; // mantiene la malla previa para evitar parpadeo
         }
 
-        var finalPts = MaybeCloseLoop(pts);
+        var finalPts = ApplyConnectMode(pts);
         RenderOrCache(finalPts);
     }
 
@@ -418,8 +431,32 @@ public class RoadFromTargetsSticky : MonoBehaviour
         GenerateRoad(controlPoints);
     }
 
+    // Aplica el modo de conexión pedido desde el inspector
+    List<Transform> ApplyConnectMode(List<Transform> src)
+    {
+        if (src == null || src.Count == 0) return src;
+        switch (connectMode)
+        {
+            case ConnectMode.FirstToLastOnly:
+                if (src.Count >= 2)
+                {
+                    return new List<Transform> { src[0], src[^1] };
+                }
+                return new List<Transform>(src);
+            case ConnectMode.LastTwoOnly:
+                if (src.Count >= 2)
+                {
+                    return new List<Transform> { src[^2], src[^1] };
+                }
+                return new List<Transform>(src);
+            case ConnectMode.Sequential:
+            default:
+                return MaybeCloseLoopSequential(src);
+        }
+    }
+
     // Si hay ≥3 puntos y el toggle está activo, devolvemos una copia con el primero repetido al final.
-    List<Transform> MaybeCloseLoop(List<Transform> src)
+    List<Transform> MaybeCloseLoopSequential(List<Transform> src)
     {
         if (!closeLoopWhenAtLeast3 || src == null || src.Count < 3) return src;
         var list = new List<Transform>(src.Count + 1);
@@ -705,8 +742,25 @@ public class RoadFromTargetsSticky : MonoBehaviour
      */
     void GenerateRoad(List<Transform> controlPoints)
     {
+        // Detecta si la lista de control trae el primer punto repetido al final (cierre lógico)
+        bool controlClosed = false;
+        if (controlPoints != null && controlPoints.Count >= 3)
+        {
+            var firstT = controlPoints[0];
+            var lastT = controlPoints[^1];
+            controlClosed = ReferenceEquals(firstT, lastT) ||
+                            ((firstT != null && lastT != null) && (firstT.position - lastT.position).sqrMagnitude < 1e-10f);
+        }
+
+        // Copia posiciones y, si hay duplicado final, quítalo para muestrear como bucle cerrado real
         var ctrl = new List<Vector3>(controlPoints.Count);
-        foreach (var t in controlPoints) ctrl.Add(t.position);
+        int countToCopy = controlPoints.Count;
+        if (controlClosed && countToCopy >= 2) countToCopy -= 1; // elimina el duplicado final
+        for (int i = 0; i < countToCopy; i++)
+        {
+            var t = controlPoints[i];
+            if (t) ctrl.Add(t.position);
+        }
 
         // Opcional: forzar todos los puntos a compartir la misma Y mundial
         float yRef = 0f;
@@ -756,8 +810,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
             planePoint.y = yRef;
         }
 
-        List<float> cum;
-        var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum);
+    List<float> cum;
+    var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum, controlClosed);
 
         if (flattenToTargetsPlane || forceTargetsSameHeight)
         {
@@ -778,13 +832,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         {
             centerline = RefineByCurvature(centerline, up, maxCurveAngleDeg, maxSegmentLen, maxRefinePasses);
         }
-        // Detect closed (centroide 0==last) y limpiar duplicado del final si lo hay
-        bool isClosed = centerline.Count >= 3 && (centerline[0] - centerline[^1]).sqrMagnitude < 1e-8f;
-        if (isClosed)
-        {
-            // si el último es duplicado del primero, eliminarlo para evitar pares superpuestos
-            centerline.RemoveAt(centerline.Count - 1);
-        }
+        // El centro se ha muestreado con o sin cierre según 'controlClosed'
+        bool isClosed = controlClosed;
 
         // Opcional: rotar la seam al vértice de menor curvatura para que no se note
         if (isClosed && rotateSeamToLowestCurvature && centerline.Count >= 3)
@@ -1220,7 +1269,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         // Segmento de cierre explícito (último -> primero) si procede
-        if (drawLoopClosureGizmo && closeLoopWhenAtLeast3 && lastUsedControlPoints.Count >= 3)
+        if (connectMode == ConnectMode.Sequential && drawLoopClosureGizmo && closeLoopWhenAtLeast3 && lastUsedControlPoints.Count >= 3)
         {
             var first = lastUsedControlPoints[0];
             var last = lastUsedControlPoints[^1];
@@ -1469,7 +1518,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
      * @param cumulativeDist Distancia acumulada a lo largo de la polilínea muestreada.
      * @details Parámetros centrípetos: t[i] = t[i-1] + |p[i] - p[i-1]|^0.5.
      */
-    List<Vector3> SampleCenterline(List<Vector3> pts, int samples, out List<float> cumulativeDist)
+    List<Vector3> SampleCenterline(List<Vector3> pts, int samples, out List<float> cumulativeDist, bool controlClosed = false)
     {
         cumulativeDist = new List<float>();
         var result = new List<Vector3>();
@@ -1488,33 +1537,64 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         float accDist = 0f;
-        for (int i = 0; i < pts.Count - 1; i++)
+        if (controlClosed && pts.Count >= 3)
         {
-            Vector3 p0 = (i == 0) ? pts[i] : pts[i - 1];
-            Vector3 p1 = pts[i];
-            Vector3 p2 = pts[i + 1];
-            Vector3 p3 = (i + 2 < pts.Count) ? pts[i + 2] : pts[i + 1];
-
-            int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
-            for (int s = s0; s <= samples; s++)
+            int n = pts.Count; // sin duplicados
+            for (int i = 0; i < n; i++)
             {
-                float t = s / (float)samples;
-                Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
-                if (s == 0) pt = p1;
-                if (s == samples) pt = p2;
+                int i0 = (i - 1 + n) % n;
+                int i1 = i;
+                int i2 = (i + 1) % n;
+                int i3 = (i + 2) % n;
+                Vector3 p0 = pts[i0];
+                Vector3 p1 = pts[i1];
+                Vector3 p2 = pts[i2];
+                Vector3 p3 = pts[i3];
 
-                if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
-                result.Add(pt); cumulativeDist.Add(accDist);
+                int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
+                for (int s = s0; s <= samples; s++)
+                {
+                    float t = s / (float)samples;
+                    Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
+                    if (s == 0) pt = p1;
+                    if (s == samples) pt = p2;
+
+                    if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
+                    result.Add(pt); cumulativeDist.Add(accDist);
+                }
             }
+            return result;
         }
-
-        if (result.Count > 0)
+        else
         {
-            Vector3 last = pts[^1];
-            accDist += Vector3.Distance(last, result[^1]);
-            result[^1] = last; cumulativeDist[^1] = accDist;
+            for (int i = 0; i < pts.Count - 1; i++)
+            {
+                Vector3 p0 = (i == 0) ? pts[i] : pts[i - 1];
+                Vector3 p1 = pts[i];
+                Vector3 p2 = pts[i + 1];
+                Vector3 p3 = (i + 2 < pts.Count) ? pts[i + 2] : pts[i + 1];
+
+                int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
+                for (int s = s0; s <= samples; s++)
+                {
+                    float t = s / (float)samples;
+                    Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
+                    if (s == 0) pt = p1;
+                    if (s == samples) pt = p2;
+
+                    if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
+                    result.Add(pt); cumulativeDist.Add(accDist);
+                }
+            }
+
+            if (result.Count > 0)
+            {
+                Vector3 last = pts[^1];
+                accDist += Vector3.Distance(last, result[^1]);
+                result[^1] = last; cumulativeDist[^1] = accDist;
+            }
+            return result;
         }
-        return result;
     }
 
     /**

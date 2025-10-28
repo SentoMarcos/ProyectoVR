@@ -305,13 +305,13 @@ MonoBehaviour:
   PreviewVisible: 1
   RuntimeOcclusion: 0
   RuntimeCollider: 0
-  mTrackableName: cafes
+  mTrackableName: cartas-proyectoC
   mInitializedInEditor: 1
-  mDataSetPath: Vuforia/Practica_uno_extra.xml
-  mAspectRatio: 1.579474
+  mDataSetPath: Vuforia/ProyectoVR.xml
+  mAspectRatio: 1.400508
   mImageTargetType: 0
   mWidth: 1
-  mHeight: 1.579474
+  mHeight: 1.400508
   mRuntimeTexture: {fileID: 0}
   mMotionHint: 1
   mTrackingOptimization: 0
@@ -331,8 +331,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Vuforia.Unity.Engine.dll::Vuforia.ImageTargetPreview
   mObserverBehaviour: {fileID: 151272273}
   mHiddenRoot: {fileID: 0}
-  mTargetName: cafes
-  mDatasetName: Vuforia/Practica_uno_extra.xml
+  mTargetName: cartas-proyectoC
+  mDatasetName: Vuforia/ProyectoVR.xml
   mCastedBehaviour: {fileID: 151272273}
   mMeshFilter: {fileID: 0}
   mMeshRenderer: {fileID: 0}
@@ -828,13 +828,13 @@ MonoBehaviour:
   PreviewVisible: 1
   RuntimeOcclusion: 0
   RuntimeCollider: 0
-  mTrackableName: metroval
+  mTrackableName: cartas-proyectoB
   mInitializedInEditor: 1
-  mDataSetPath: Vuforia/Practica_uno_extra.xml
-  mAspectRatio: 1.579602
+  mDataSetPath: Vuforia/ProyectoVR.xml
+  mAspectRatio: 1.400508
   mImageTargetType: 0
   mWidth: 1
-  mHeight: 1.579602
+  mHeight: 1.400508
   mRuntimeTexture: {fileID: 0}
   mMotionHint: 1
   mTrackingOptimization: 0
@@ -854,8 +854,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Vuforia.Unity.Engine.dll::Vuforia.ImageTargetPreview
   mObserverBehaviour: {fileID: 894611535}
   mHiddenRoot: {fileID: 0}
-  mTargetName: metroval
-  mDatasetName: Vuforia/Practica_uno_extra.xml
+  mTargetName: cartas-proyectoB
+  mDatasetName: Vuforia/ProyectoVR.xml
   mCastedBehaviour: {fileID: 894611535}
   mMeshFilter: {fileID: 0}
   mMeshRenderer: {fileID: 0}
@@ -966,7 +966,7 @@ MonoBehaviour:
   updateEveryFrame: 1
   samplesPerSegment: 24
   useRealPointsDirectly: 1
-  detectionOrderManager: {fileID: 0}
+  detectionOrderManager: {fileID: 1684460161}
   useFrozenPointsFromManager: 1
   regenerateOnOrderChanged: 1
   closeLoopWhenAtLeast3: 1
@@ -1154,13 +1154,13 @@ MonoBehaviour:
   PreviewVisible: 1
   RuntimeOcclusion: 0
   RuntimeCollider: 0
-  mTrackableName: carrefour
+  mTrackableName: carta-Moto
   mInitializedInEditor: 1
-  mDataSetPath: Vuforia/Practica_uno_extra.xml
-  mAspectRatio: 1.587597
+  mDataSetPath: Vuforia/ProyectoVR.xml
+  mAspectRatio: 1.400508
   mImageTargetType: 0
   mWidth: 1
-  mHeight: 1.587597
+  mHeight: 1.400508
   mRuntimeTexture: {fileID: 0}
   mMotionHint: 1
   mTrackingOptimization: 0
@@ -1180,8 +1180,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Vuforia.Unity.Engine.dll::Vuforia.ImageTargetPreview
   mObserverBehaviour: {fileID: 1394292030}
   mHiddenRoot: {fileID: 0}
-  mTargetName: carrefour
-  mDatasetName: Vuforia/Practica_uno_extra.xml
+  mTargetName: carta-Moto
+  mDatasetName: Vuforia/ProyectoVR.xml
   mCastedBehaviour: {fileID: 1394292030}
   mMeshFilter: {fileID: 0}
   mMeshRenderer: {fileID: 0}
@@ -1310,13 +1310,13 @@ MonoBehaviour:
   PreviewVisible: 1
   RuntimeOcclusion: 0
   RuntimeCollider: 0
-  mTrackableName: steam
+  mTrackableName: cartas-proyectoA
   mInitializedInEditor: 1
-  mDataSetPath: Vuforia/Practica_uno_extra.xml
-  mAspectRatio: 1.480595
+  mDataSetPath: Vuforia/ProyectoVR.xml
+  mAspectRatio: 1.400508
   mImageTargetType: 0
   mWidth: 1
-  mHeight: 1.480595
+  mHeight: 1.400508
   mRuntimeTexture: {fileID: 0}
   mMotionHint: 1
   mTrackingOptimization: 0
@@ -1336,8 +1336,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Vuforia.Unity.Engine.dll::Vuforia.ImageTargetPreview
   mObserverBehaviour: {fileID: 1622657894}
   mHiddenRoot: {fileID: 0}
-  mTargetName: steam
-  mDatasetName: Vuforia/Practica_uno_extra.xml
+  mTargetName: cartas-proyectoA
+  mDatasetName: Vuforia/ProyectoVR.xml
   mCastedBehaviour: {fileID: 1622657894}
   mMeshFilter: {fileID: 0}
   mMeshRenderer: {fileID: 0}
