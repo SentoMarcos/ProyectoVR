@@ -966,10 +966,11 @@ MonoBehaviour:
   updateEveryFrame: 1
   samplesPerSegment: 24
   useRealPointsDirectly: 1
-  detectionOrderManager: {fileID: 1684460161}
+  detectionOrderManager: {fileID: 0}
   useFrozenPointsFromManager: 1
   regenerateOnOrderChanged: 1
   closeLoopWhenAtLeast3: 1
+  connectMode: 0
   flattenToTargetsPlane: 1
   lockPlaneAfterTwoStable: 1
   uvTilesPerMeter: 0.15
