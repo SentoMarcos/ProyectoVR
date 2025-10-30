@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1706.6667
     height: 976
   m_ShowMode: 4
-  m_Title: Console
+  m_Title: Game
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -120,7 +120,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 100}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 38
+  controlID: 45
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 100}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 39
+  controlID: 46
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -184,7 +184,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: SceneView
+  m_Name: GameView
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -195,13 +195,13 @@ MonoBehaviour:
     height: 610
   m_MinSize: {x: 202, y: 226}
   m_MaxSize: {x: 4002, y: 4026}
-  m_ActualView: {fileID: 12}
+  m_ActualView: {fileID: 20}
   m_Panes:
   - {fileID: 12}
   - {fileID: 13}
   - {fileID: 20}
-  m_Selected: 0
-  m_LastSelected: 2
+  m_Selected: 2
+  m_LastSelected: 0
 --- !u!114 &9
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -299,7 +299,7 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: 86e9fdfff0f0fdff08f1fdff44f4fdfff6f4fdfffef4fdffe4f5fdff10f7fdff16f7fdffc4f7fdffcaf7fdff7cf8fdff02d9feff0ad9feff20f1feff32f2feffc2f5feff6ef9feffc0fefeff4400ffffb213ffff6014ffffb415ffff6c16ffffe434ffffe634ffff843effffa640ffffb241ffffd853ffff5059ffff987cffff107dfffffc7dffff647effffb683ffff24b8ffff6eb9ffff52baffffe2c6ffffdcddffffbae0ffff6ee1ffff20f5ffff52f6ffff10fbffff8cb800009eb80000c4b80000a8bb0000d8bc000052be000064be00008cbe000074c3000086c30000aec300000cc5000070d1000078d2000084d2000000df000034df0000b2e2000058e600007ee80000f2e80000c4f400000cf5000090f500001c290100
+      m_ExpandedIDs: c00affffd80affff160effffc80effffd00effffb40fffffdc10ffffe210ffff9011ffff9611ffff4412ffff1cf0ffff1ef0ffffc8f0ffffcaf0ffff78f1ffff10fbffff9ebf0000f2c00000
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -345,8 +345,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Scene\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 24
+    x: 219.33334
+    y: 78.66667
     width: 1002.6667
     height: 584
   m_SerializedDataModeController:
@@ -1157,7 +1157,7 @@ MonoBehaviour:
     m_OverlaysVisible: 1
   m_LockTracker:
     m_IsLocked: 0
-  m_LastSelectedObjectID: 62732
+  m_LastSelectedObjectID: 49096
 --- !u!114 &15
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1260,7 +1260,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 79}
     m_SelectedIDs: e2bf0000
     m_LastClickedID: 49122
-    m_ExpandedIDs: 00000000feb8000000b90000
+    m_ExpandedIDs: 000000000ab900000cb90000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1289,7 +1289,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 00000000feb8000000b90000
+    m_ExpandedIDs: 000000000ab900000cb90000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1621,8 +1621,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Game\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 219.33334
-    y: 78.66667
+    x: 1
+    y: 24
     width: 1002.6667
     height: 584
   m_SerializedDataModeController:
@@ -1641,7 +1641,7 @@ MonoBehaviour:
   m_SerializedViewValues:
   - C:\Users\semai\ProyectoVR\Library\PlayModeViewStates\f25d8fdf3b6ac314c98203f54ff06e0f
   m_PlayModeViewName: GameView
-  m_ShowGizmos: 0
+  m_ShowGizmos: 1
   m_TargetDisplay: 0
   m_ClearColor: {r: 0, g: 0, b: 0, a: 0}
   m_TargetSize: {x: 1504, y: 844.5}
@@ -1651,7 +1651,7 @@ MonoBehaviour:
   m_EnterPlayModeBehavior: 0
   m_UseMipMap: 0
   m_VSyncEnabled: 0
-  m_Gizmos: 0
+  m_Gizmos: 1
   m_Stats: 0
   m_SelectedSizes: 03000000000000000000000000000000000000000000000000000000000000000000000000000000
   m_ZoomArea:
@@ -1671,7 +1671,7 @@ MonoBehaviour:
     m_HSlider: 0
     m_VSlider: 0
     m_IgnoreScrollWheelUntilClicked: 0
-    m_EnableMouseInput: 0
+    m_EnableMouseInput: 1
     m_EnableSliderZoomHorizontal: 0
     m_EnableSliderZoomVertical: 0
     m_UniformScale: 1
