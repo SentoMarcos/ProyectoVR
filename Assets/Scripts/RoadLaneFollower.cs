@@ -8,6 +8,8 @@ public class RoadLaneFollower : MonoBehaviour
 {
     [Header("Referencia")]
     public RoadFromTargetsSticky road;
+    [Tooltip("Transform que se moverá/rotará. Si está vacío, se usa este mismo transform")]
+    public Transform motionTarget;
 
     [Header("Movimiento")]
     [Tooltip("Velocidad a lo largo de la carretera (m/s)")]
@@ -16,6 +18,8 @@ public class RoadLaneFollower : MonoBehaviour
     public float startDistance = 0f;
     [Tooltip("Si está activo y el camino es cerrado, se repite en bucle")]
     public bool loopOnClosed = true;
+    [Tooltip("Si está activo, SOLO avanza cuando AccelerateOn() esté activo")]
+    public bool requireAccelerate = true;
 
     [Header("Carriles")]
     [Tooltip("Índice de carril (0..laneCount-1). 0 = borde izq, laneCount-1 = borde dcha, centro = medio.")]
@@ -33,6 +37,7 @@ public class RoadLaneFollower : MonoBehaviour
     float currentS;              // distancia acumulada actual
     float targetLaneT;           // objetivo lateral en [-0.5, 0.5]
     float currentLaneT;          // valor suavizado actual en [-0.5, 0.5]
+    bool accelerating;           // gate de aceleración
 
     void Start()
     {
@@ -47,7 +52,8 @@ public class RoadLaneFollower : MonoBehaviour
 
         float dt = Mathf.Max(0f, Time.deltaTime);
         // Avanza
-        currentS += speed * dt;
+        float effSpeed = (requireAccelerate && !accelerating) ? 0f : Mathf.Max(0f, speed);
+        currentS += effSpeed * dt;
         float len = road.PathLength;
         if (len > 1e-5f)
         {
@@ -72,12 +78,13 @@ public class RoadLaneFollower : MonoBehaviour
             float half = road.TotalWidthPublic * 0.5f;
             Vector3 lateral = right * (currentLaneT * 2f * half);
             Vector3 finalPos = pos + lateral + up * verticalOffset;
-            transform.position = finalPos;
+            var t = motionTarget ? motionTarget : transform;
+            t.position = finalPos;
 
             if (alignToPath && tan.sqrMagnitude > 1e-8f)
             {
                 Quaternion rot = Quaternion.LookRotation(tan, up);
-                transform.rotation = rot;
+                t.rotation = rot;
             }
         }
     }
@@ -95,4 +102,10 @@ public class RoadLaneFollower : MonoBehaviour
         if (lanes == 1) targetLaneT = 0f;
         else targetLaneT = (laneIndex / (float)(lanes - 1)) - 0.5f;
     }
+
+    // API pública para el botón de acelerar
+    public void SetAccelerating(bool value) => accelerating = value;
+    public void AccelerateOn() => accelerating = true;
+    public void AccelerateOff() => accelerating = false;
+    public bool IsAccelerating => accelerating;
 }
