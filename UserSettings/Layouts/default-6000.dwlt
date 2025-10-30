@@ -19,7 +19,11 @@ MonoBehaviour:
     width: 1536
     height: 772.8
   m_ShowMode: 4
+<<<<<<< HEAD
   m_Title: Project
+=======
+  m_Title: Game
+>>>>>>> origin/Sento
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -120,7 +124,11 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 100}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
+<<<<<<< HEAD
   controlID: 35
+=======
+  controlID: 45
+>>>>>>> origin/Sento
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -172,7 +180,11 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 100}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
+<<<<<<< HEAD
   controlID: 36
+=======
+  controlID: 46
+>>>>>>> origin/Sento
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -299,7 +311,11 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
+<<<<<<< HEAD
       m_ExpandedIDs: 7c2fffff942fffffd232ffff4433ffff4c33ffffb439ffffb23fffffac46ffff7cf80000
+=======
+      m_ExpandedIDs: c00affffd80affff160effffc80effffd00effffb40fffffdc10ffffe210ffff9011ffff9611ffff4412ffff1cf0ffff1ef0ffffc8f0ffffcaf0ffff78f1ffff10fbffff9ebf0000f2c00000
+>>>>>>> origin/Sento
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -345,10 +361,17 @@ MonoBehaviour:
     m_TextWithWhitespace: "Scene\u200B"
   m_Pos:
     serializedVersion: 2
+<<<<<<< HEAD
     x: 228.66667
     y: 87.333336
     width: 990.6667
     height: 572.6667
+=======
+    x: 219.33334
+    y: 78.66667
+    width: 1002.6667
+    height: 584
+>>>>>>> origin/Sento
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -1138,7 +1161,11 @@ MonoBehaviour:
     m_OverlaysVisible: 1
   m_LockTracker:
     m_IsLocked: 0
+<<<<<<< HEAD
   m_LastSelectedObjectID: 46106
+=======
+  m_LastSelectedObjectID: 49096
+>>>>>>> origin/Sento
 --- !u!114 &15
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1238,10 +1265,17 @@ MonoBehaviour:
   m_LockTracker:
     m_IsLocked: 0
   m_FolderTreeState:
+<<<<<<< HEAD
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 6af70000
     m_LastClickedID: 63338
     m_ExpandedIDs: 00000000c2b90000
+=======
+    scrollPos: {x: 0, y: 79}
+    m_SelectedIDs: e2bf0000
+    m_LastClickedID: 49122
+    m_ExpandedIDs: 000000000ab900000cb90000
+>>>>>>> origin/Sento
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1270,7 +1304,11 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
+<<<<<<< HEAD
     m_ExpandedIDs: 00000000c2b90000
+=======
+    m_ExpandedIDs: 000000000ab900000cb90000
+>>>>>>> origin/Sento
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1604,8 +1642,13 @@ MonoBehaviour:
     serializedVersion: 2
     x: 1
     y: 24
+<<<<<<< HEAD
     width: 802.80005
     height: 448.4
+=======
+    width: 1002.6667
+    height: 584
+>>>>>>> origin/Sento
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
