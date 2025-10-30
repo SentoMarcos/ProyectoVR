@@ -4,14 +4,18 @@ using System.Collections;
 public class PlayerController : MonoBehaviour
 {
     [Header("Movimiento")]
-    public float moveDistance = 3.5f;
-    public float moveDuration = 0.3f;
+    public float moveDistance = 3.5f; // Obsoleto para traslación directa
+    public float moveDuration = 0.3f; // Obsoleto para traslación directa
 
     [Header("Carriles")]
-    public int maxLane = 1; // -1 = izquierda, 0 = centro, 1 = derecha
-    private int currentLane = 0;
+    public int maxLane = 1; // Obsoleto, lo controla RoadFromTargetsSticky.laneCount
+    private int currentLane = 0; // índice discreto usado por RoadLaneFollower
 
     public Animator animator;
+
+    [Header("Seguir carretera")]
+    public RoadLaneFollower laneFollower; // Asignar en la moto
+    public bool autoCenterOnStart = true;
 
     private bool isMoving = false;
     private bool ready = false; // evita movimientos en el arranque
@@ -21,16 +25,13 @@ public class PlayerController : MonoBehaviour
         // 🔹 Asegura que el Animator no empuje al personaje
         if (animator != null)
             animator.applyRootMotion = false;
+
+        if (!laneFollower)
+            laneFollower = GetComponent<RoadLaneFollower>();
     }
 
     IEnumerator Start()
     {
-        // 🔹 Centra el personaje en el carril 0
-        Vector3 p = transform.position;
-        p.x = 0f; // si tus carriles son en Z, cambia por p.z = 0f;
-        transform.position = p;
-        currentLane = 0;
-
         // 🔹 Reproduce Idle como estado inicial
         if (animator != null)
         {
@@ -38,62 +39,101 @@ public class PlayerController : MonoBehaviour
             animator.Update(0f);
         }
 
-        // Espera un frame para evitar inputs o triggers automáticos
-        yield return null;
+        if (laneFollower && laneFollower.road)
+        {
+            // Espera un frame e intenta esperar a PathReady un tiempo prudente
+            yield return null;
+            float timeout = 2f;
+            while (!laneFollower.road.PathReady && timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+            if (autoCenterOnStart && laneFollower.road)
+            {
+                int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
+                currentLane = (lanes - 1) / 2;
+                laneFollower.laneIndex = currentLane;
+            }
+        }
+        else
+        {
+            yield return null;
+        }
+
         ready = true;
     }
 
     public void MoveLeft()
     {
         if (!ready || isMoving) return;
+        if (!laneFollower || !laneFollower.road) return;
 
-        if (currentLane > -1 * maxLane)
+        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
+        int newLane = Mathf.Clamp(currentLane - 1, 0, lanes - 1);
+        if (newLane != currentLane)
         {
-            currentLane--;
-            StartCoroutine(MoveSmooth(Vector3.left * moveDistance));
+            currentLane = newLane;
+            laneFollower.laneIndex = currentLane;
 
-            // 🔹 Reinicia animación izquierda desde frame 0
-            animator.Play("BikeRig|movIzquierda", 0, 0f);
-            animator.Update(0f);
+            if (animator)
+            {
+                animator.Play("BikeRig|movIzquierda", 0, 0f);
+                animator.Update(0f);
+            }
+
+            StartCoroutine(LaneChangeCooldown(laneFollower ? Mathf.Max(0.05f, laneFollower.laneChangeTime) : 0.2f));
         }
     }
 
     public void MoveRight()
     {
         if (!ready || isMoving) return;
+        if (!laneFollower || !laneFollower.road) return;
 
-        if (currentLane < maxLane)
+        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
+        int newLane = Mathf.Clamp(currentLane + 1, 0, lanes - 1);
+        if (newLane != currentLane)
         {
-            currentLane++;
-            StartCoroutine(MoveSmooth(Vector3.right * moveDistance));
+            currentLane = newLane;
+            laneFollower.laneIndex = currentLane;
 
-            // 🔹 Reinicia animación derecha desde frame 0
-            animator.Play("BikeRig|movDerecha", 0, 0f);
-            animator.Update(0f);
+            if (animator)
+            {
+                animator.Play("BikeRig|movDerecha", 0, 0f);
+                animator.Update(0f);
+            }
+
+            StartCoroutine(LaneChangeCooldown(laneFollower ? Mathf.Max(0.05f, laneFollower.laneChangeTime) : 0.2f));
         }
     }
 
     public void MoveForward()
     {
-        if (!ready || isMoving) return;
-        StartCoroutine(MoveSmooth(Vector3.forward * moveDistance));
+        // Botón de acelerar (mantener presionado)
+        if (!ready) return;
+        if (laneFollower) laneFollower.AccelerateOn();
     }
 
-    private IEnumerator MoveSmooth(Vector3 offset)
+    private IEnumerator LaneChangeCooldown(float duration)
     {
         isMoving = true;
-        Vector3 start = transform.position;
-        Vector3 end = start + offset;
         float t = 0f;
-
-        while (t < 1f)
+        while (t < duration)
         {
-            t += Time.deltaTime / 0.9f;
-            transform.position = Vector3.Lerp(start, end, Mathf.SmoothStep(0f, 1f, t));
+            t += Time.deltaTime;
             yield return null;
         }
-
-        transform.position = end;
         isMoving = false;
+    }
+
+    // UI hooks
+    public void AccelerateOn()
+    {
+        if (laneFollower) laneFollower.AccelerateOn();
+    }
+    public void AccelerateOff()
+    {
+        if (laneFollower) laneFollower.AccelerateOff();
     }
 }
