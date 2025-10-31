@@ -388,12 +388,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 19258fa4a81c4a74fbba4ad1f9d500ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ToggleButtonPause
-  buttonImage: {fileID: 158685314}
-  normalSprite: {fileID: 21300000, guid: 8c5baf3b07abcad42857a2a27a0333ca, type: 3}
-  toggledSprite: {fileID: 21300000, guid: dc55c692272cb9c4f824b83ea9cefc38, type: 3}
-  menuPanel: {fileID: 1673702105}
-  menuPanel2: {fileID: 0}
-  isToggled: 0
 --- !u!114 &158685313
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1644,7 +1638,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1185004242973101541, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1465476741719960426, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       propertyPath: road
@@ -1859,8 +1853,8 @@ MonoBehaviour:
   laneWidthMeters: 3
   laneWidthFraction: 0.08
   maxWidthVsMinSeg: 0.5
-  minTotalWidthMeters: 0.525
-  maxTotalWidthMeters: 0.08
+  minTotalWidthMeters: 0.9
+  maxTotalWidthMeters: 0.87
   adaptiveWidthInCurves: 1
   minWidthScaleAtSharpTurn: 0.5
   angleForMinWidth: 50
@@ -1882,6 +1876,24 @@ MonoBehaviour:
   minDeltaToUpdate: 0.003
   surfaceOffset: 0.002
   asphaltMaterial: {fileID: 0}
+  enableLaneLines: 1
+  laneLineMaterial: {fileID: 2100000, guid: fbc014b93e7750440aaf8bbcefb17ee6, type: 2}
+  laneLineTexture: {fileID: 0}
+  laneLineColor: {r: 1, g: 1, b: 1, a: 1}
+  lineUvTilesPerMeter: 0.5
+  centerLineWidthMeters: 0.02
+  edgeLineWidthMeters: 0.02
+  drawEdgeLines: 1
+  drawCenterLines: 1
+  centerLinesDashed: 1
+  dashLengthMeters: 0.168
+  gapLengthMeters: 0.088
+  dashOffsetMeters: 0
+  addUnderShadow: 0
+  shadowExtraWidthMeters: 0.02
+  shadowUnderOffset: -0.0015
+  shadowColor: {r: 0, g: 0, b: 0, a: 0.35}
+  shadowMaterial: {fileID: 0}
   requireVuforiaTracking: 1
   countDetectedAsTracked: 1
   logWhenNoPoints: 0
@@ -1897,6 +1909,7 @@ MonoBehaviour:
   drawEdgesGizmo: 1
   leftEdgeColor: {r: 0.9, g: 0.1, b: 0.1, a: 0.9}
   rightEdgeColor: {r: 0.1, g: 0.1, b: 0.9, a: 0.9}
+  outerLaneEdgeMargin: 0.1
 --- !u!1 &1247265042
 GameObject:
   m_ObjectHideFlags: 0
@@ -3369,9 +3382,9 @@ RectTransform:
   - {fileID: 1944420474}
   - {fileID: 700312575}
   - {fileID: 1308715924}
+  - {fileID: 1769987393}
   - {fileID: 1673702106}
   - {fileID: 158685311}
-  - {fileID: 1769987393}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
