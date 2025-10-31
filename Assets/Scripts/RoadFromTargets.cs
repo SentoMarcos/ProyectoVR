@@ -165,6 +165,45 @@ public class RoadFromTargetsSticky : MonoBehaviour
     [Tooltip("Si no hay material, se crea uno oscuro y doble cara.")]
     /// <summary>Material utilizado para renderizar la carretera (se crea uno Unlit si no hay).</summary>
     public Material asphaltMaterial;
+    [Header("Marcas de carril (pintura)")]
+    [Tooltip("Dibuja líneas de carril (texturas) sobre la carretera.")]
+    public bool enableLaneLines = true;
+    [Tooltip("Material para las líneas (si está vacío, se crea uno Unlit)")]
+    public Material laneLineMaterial;
+    [Tooltip("Textura opcional para las líneas (por ejemplo, patrón discontinuo). Si el material tiene _BaseMap/_MainTex, se asigna aquí.")]
+    public Texture2D laneLineTexture;
+    [Tooltip("Color/tinte para las líneas")]
+    public Color laneLineColor = Color.white;
+    [Tooltip("Repeticiones de UV por metro a lo largo de la carretera (para texturas de líneas)")]
+    public float lineUvTilesPerMeter = 0.5f;
+    [Tooltip("Grosor de líneas internas (m)")]
+    [Range(0.005f, 0.2f)] public float centerLineWidthMeters = 0.06f;
+    [Tooltip("Grosor de líneas de borde (m)")]
+    [Range(0.005f, 0.2f)] public float edgeLineWidthMeters = 0.08f;
+    [Tooltip("Dibujar líneas de borde (extremos)")]
+    public bool drawEdgeLines = true;
+    [Tooltip("Dibujar líneas internas (separadoras)")]
+    public bool drawCenterLines = true;
+    [Tooltip("Las líneas internas (separadoras) serán discontinuas")]
+    public bool centerLinesDashed = true;
+    [Tooltip("Longitud de cada trazo de línea discontinua (m)")]
+    [Range(0.02f, 2f)] public float dashLengthMeters = 0.35f;
+    [Tooltip("Longitud del hueco entre trazos (m)")]
+    [Range(0.02f, 2f)] public float gapLengthMeters = 0.35f;
+    [Tooltip("Desfase inicial del patrón (m)")]
+    public float dashOffsetMeters = 0f;
+
+    [Header("Sombra bajo la carretera")]
+    [Tooltip("Dibuja una malla extra, un poco más ancha y ligeramente por debajo, para simular sombra.")]
+    public bool addUnderShadow = true;
+    [Tooltip("Ancho extra por lado (metros) para la sombra.")]
+    [Range(0f, 0.5f)] public float shadowExtraWidthMeters = 0.02f;
+    [Tooltip("Offset adicional hacia abajo respecto a surfaceOffset (metros). Usa negativo para que quede un poco por debajo.")]
+    [Range(-0.01f, 0.01f)] public float shadowUnderOffset = -0.0015f;
+    [Tooltip("Color de la sombra (usa alpha bajo, p.ej. 0.25-0.45).")]
+    public Color shadowColor = new Color(0f, 0f, 0f, 0.35f);
+    [Tooltip("Material para la sombra. Si está vacío, se crea uno Unlit transparente automáticamente.")]
+    public Material shadowMaterial;
 
     [Header("Vuforia (requisito de tracking)")]
     [Tooltip("Si está activo, SOLO se conectan puntos que estén detectados por Vuforia (ignora activeInHierarchy).")]
@@ -205,6 +244,14 @@ public class RoadFromTargetsSticky : MonoBehaviour
     Mesh mesh;
     /// <summary>Renderer para poder ocultar/mostrar la malla fácilmente.</summary>
     MeshRenderer mr;
+    // Líneas
+    MeshFilter linesMf;
+    MeshRenderer linesMr;
+    Mesh linesMesh;
+    // Sombra
+    MeshFilter shadowMf;
+    MeshRenderer shadowMr;
+    Mesh shadowMesh;
     /// <summary>Últimos puntos de control usados (tras aplicar cierre si procede) para dibujar gizmos.</summary>
     readonly List<Transform> lastUsedControlPoints = new();
 
@@ -222,6 +269,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public bool IsClosedPath => lastClosed;
     public int LaneCountPublic => laneCount;
     public float TotalWidthPublic => lastTotalWidth;
+    [Tooltip("Margen de seguridad en extremos: reduce el alcance de los carriles exteriores (m).")]
+    [Range(0f, 0.5f)] public float outerLaneEdgeMargin = 0.1f;
+
+    /// <summary>
+    /// Mapea un índice de carril 0..(laneCount-1) a un valor t en [-0.5,0.5] respetando un margen en bordes.
+    /// </summary>
+    public float LaneIndexToTRel(int laneIndex)
+    {
+        int lanes = Mathf.Max(1, laneCount);
+        laneIndex = Mathf.Clamp(laneIndex, 0, lanes - 1);
+        if (lanes == 1) return 0f;
+        // margen relativo en [-0.5,0.5]
+        float half = Mathf.Max(1e-6f, lastTotalWidth * 0.5f);
+        float relMargin = Mathf.Clamp01(outerLaneEdgeMargin / (half * 2f)); // convertir metros a fracción de [-0.5,0.5]
+        float tMin = -0.5f + relMargin;
+        float tMax =  0.5f - relMargin;
+        return Mathf.Lerp(tMin, tMax, laneIndex / (float)(lanes - 1));
+    }
 
     /// <summary>
     /// Muestra posición y tangente a lo largo del camino por distancia acumulada (m).
@@ -310,6 +375,74 @@ public class RoadFromTargetsSticky : MonoBehaviour
             asphaltMaterial.SetInt("_Cull", 0);
             asphaltMaterial.SetInt("_CullMode", 0);
             mr.sharedMaterial = asphaltMaterial;
+        }
+
+        // Hijo para líneas de carril
+        var linesTr = transform.Find("RoadLines");
+        if (!linesTr)
+        {
+            var go = new GameObject("RoadLines");
+            go.transform.SetParent(transform, false);
+            linesTr = go.transform;
+        }
+        linesMf = linesTr.GetComponent<MeshFilter>();
+        if (!linesMf) linesMf = linesTr.gameObject.AddComponent<MeshFilter>();
+        linesMr = linesTr.GetComponent<MeshRenderer>();
+        if (!linesMr) linesMr = linesTr.gameObject.AddComponent<MeshRenderer>();
+        if (linesMesh == null) linesMesh = new Mesh { name = "RoadLinesMesh" };
+        linesMf.sharedMesh = linesMesh;
+        if (linesMr != null && linesMr.sharedMaterial == null)
+        {
+            if (!laneLineMaterial)
+            {
+                Shader shL = Shader.Find("Universal Render Pipeline/Unlit");
+                if (!shL) shL = Shader.Find("Unlit/Color");
+                laneLineMaterial = new Material(shL);
+            }
+            if (laneLineMaterial.HasProperty("_BaseColor")) laneLineMaterial.SetColor("_BaseColor", laneLineColor);
+            if (laneLineMaterial.HasProperty("_Color"))     laneLineMaterial.SetColor("_Color",     laneLineColor);
+            if (laneLineTexture)
+            {
+                if (laneLineMaterial.HasProperty("_BaseMap")) laneLineMaterial.SetTexture("_BaseMap", laneLineTexture);
+                if (laneLineMaterial.HasProperty("_MainTex")) laneLineMaterial.SetTexture("_MainTex", laneLineTexture);
+            }
+            linesMr.sharedMaterial = laneLineMaterial;
+        }
+
+        // Crear hijo para la sombra si procede
+        var shadowTr = transform.Find("RoadShadow");
+        if (!shadowTr)
+        {
+            var go = new GameObject("RoadShadow");
+            go.transform.SetParent(transform, false);
+            shadowTr = go.transform;
+        }
+        shadowMf = shadowTr.GetComponent<MeshFilter>();
+        if (!shadowMf) shadowMf = shadowTr.gameObject.AddComponent<MeshFilter>();
+        shadowMr = shadowTr.GetComponent<MeshRenderer>();
+        if (!shadowMr) shadowMr = shadowTr.gameObject.AddComponent<MeshRenderer>();
+        if (shadowMesh == null) shadowMesh = new Mesh { name = "RoadShadowMesh" };
+        shadowMf.sharedMesh = shadowMesh;
+
+        // Material sombra por defecto si no hay
+        if (shadowMr != null && (shadowMr.sharedMaterial == null))
+        {
+            if (!shadowMaterial)
+            {
+                Shader shS = Shader.Find("Universal Render Pipeline/Unlit");
+                if (!shS) shS = Shader.Find("Unlit/Color");
+                shadowMaterial = new Material(shS);
+                // Intenta configurar transparencia básica
+                if (shadowMaterial.HasProperty("_BaseColor")) shadowMaterial.SetColor("_BaseColor", shadowColor);
+                if (shadowMaterial.HasProperty("_Color"))     shadowMaterial.SetColor("_Color",     shadowColor);
+                // Ajustes comunes para transparentes
+                shadowMaterial.SetInt("_Surface", 1); // Transparent en URP (si existe)
+                shadowMaterial.SetInt("_ZWrite", 0);
+                shadowMaterial.SetInt("_Cull", 0);
+                shadowMaterial.SetInt("_CullMode", 0);
+                shadowMaterial.renderQueue = 2990; // antes que otros transparentes comunes
+            }
+            shadowMr.sharedMaterial = shadowMaterial;
         }
 
         if (!targetsRoot)
@@ -425,9 +558,12 @@ public class RoadFromTargetsSticky : MonoBehaviour
         if (hideRoadMesh)
         {
             if (mr) mr.enabled = false;
+            if (shadowMr) shadowMr.enabled = false;
             return; // no generamos malla, sólo cache para gizmos
         }
         if (mr) mr.enabled = true;
+            if (linesMr) linesMr.enabled = enableLaneLines;
+        if (shadowMr) shadowMr.enabled = addUnderShadow;
         GenerateRoad(controlPoints);
     }
 
@@ -867,10 +1003,15 @@ public class RoadFromTargetsSticky : MonoBehaviour
     totalWidth = Mathf.Clamp(totalWidth, wMin, wMax);
     float half = totalWidth * 0.5f;
 
-        var v = new List<Vector3>(centerline.Count * 2);
-        var n = new List<Vector3>(centerline.Count * 2);
-        var uv = new List<Vector2>(centerline.Count * 2);
-        var tri = new List<int>((centerline.Count - 1) * 6);
+    var v = new List<Vector3>(centerline.Count * 2);
+    var n = new List<Vector3>(centerline.Count * 2);
+    var uv = new List<Vector2>(centerline.Count * 2);
+    var tri = new List<int>((centerline.Count - 1) * 6);
+    // Buffers de sombra
+    var vS = new List<Vector3>(centerline.Count * 2);
+    var nS = new List<Vector3>(centerline.Count * 2);
+    var uvS = new List<Vector2>(centerline.Count * 2);
+    var triS = new List<int>((centerline.Count - 1) * 6);
 
     Vector3 localUp = transform.InverseTransformDirection(up).normalized;
 
@@ -878,6 +1019,10 @@ public class RoadFromTargetsSticky : MonoBehaviour
     var pairsL = new List<Vector3>();
     var pairsR = new List<Vector3>();
     var pairsU = new List<float>();
+    // Pares para sombra
+    var spairsL = new List<Vector3>();
+    var spairsR = new List<Vector3>();
+    var spairsU = new List<float>();
 
         System.Func<int, float> widthScaleAtIndex = (idx) =>
         {
@@ -912,9 +1057,19 @@ public class RoadFromTargetsSticky : MonoBehaviour
             Vector3 right = Vector3.Cross(tdir, up).normalized;
             if (right.sqrMagnitude < 1e-8f) right = Vector3.right;
             float h = half * Mathf.Clamp(scale, 0.1f, 1f);
+            // Carretera
             pairsL.Add(p - right * h + up * surfaceOffset);
             pairsR.Add(p + right * h + up * surfaceOffset);
             pairsU.Add(uval);
+            // Sombra
+            if (addUnderShadow)
+            {
+                float hs = (h + Mathf.Max(0f, shadowExtraWidthMeters));
+                float soff = surfaceOffset + shadowUnderOffset; // normalmente menor que surfaceOffset
+                spairsL.Add(p - right * hs + up * soff);
+                spairsR.Add(p + right * hs + up * soff);
+                spairsU.Add(uval);
+            }
         };
 
         System.Action<int> addMiterAt = (iIdx) =>
@@ -928,6 +1083,16 @@ public class RoadFromTargetsSticky : MonoBehaviour
             pairsR.Add(p + offsetR + up * surfaceOffset);
             float u = cum[Mathf.Clamp(iIdx, 0, cum.Count - 1)] * uvTilesPerMeter;
             pairsU.Add(u);
+            if (addUnderShadow)
+            {
+                // Para la sombra, expandimos extra hacia fuera manteniendo la dirección del offset
+                Vector3 offL = offsetL.normalized * (offsetL.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
+                Vector3 offR = offsetR.normalized * (offsetR.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
+                float soff = surfaceOffset + shadowUnderOffset;
+                spairsL.Add(p + offL + up * soff);
+                spairsR.Add(p + offR + up * soff);
+                spairsU.Add(u);
+            }
         };
 
         if (isClosed)
@@ -1037,6 +1202,20 @@ public class RoadFromTargetsSticky : MonoBehaviour
             uv.Add(new Vector2(uval, 1f));
         }
 
+        if (addUnderShadow)
+        {
+            for (int i = 0; i < spairsL.Count; i++)
+            {
+                Vector3 Ll = transform.InverseTransformPoint(spairsL[i]);
+                Vector3 Rl = transform.InverseTransformPoint(spairsR[i]);
+                vS.Add(Ll); vS.Add(Rl);
+                nS.Add(localUp); nS.Add(localUp);
+                float uval = spairsU[i];
+                uvS.Add(new Vector2(uval, 0f));
+                uvS.Add(new Vector2(uval, 1f));
+            }
+        }
+
         // Winding automático para que siempre se vea (culling). Usar 'localUp' (espacio local).
         bool ccwUp = true;
         if (v.Count >= 4)
@@ -1063,6 +1242,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
             }
         }
 
+        if (addUnderShadow && vS.Count >= 4)
+        {
+            triS.Clear();
+            for (int i = 0; i < vS.Count - 2; i += 2)
+            {
+                if (ccwUp)
+                {
+                    triS.Add(i);     triS.Add(i + 2); triS.Add(i + 1);
+                    triS.Add(i + 1); triS.Add(i + 2); triS.Add(i + 3);
+                }
+                else
+                {
+                    triS.Add(i);     triS.Add(i + 1); triS.Add(i + 2);
+                    triS.Add(i + 1); triS.Add(i + 3); triS.Add(i + 2);
+                }
+            }
+        }
+
         // Cierre explícito si es circuito: conectar último par con el primero
         if (isClosed && v.Count >= 4)
         {
@@ -1082,12 +1279,185 @@ public class RoadFromTargetsSticky : MonoBehaviour
             }
         }
 
+        if (addUnderShadow && isClosed && vS.Count >= 4)
+        {
+            int lastPairL = vS.Count - 2;
+            int lastPairR = vS.Count - 1;
+            int firstPairL = 0;
+            int firstPairR = 1;
+            if (ccwUp)
+            {
+                triS.Add(lastPairL); triS.Add(firstPairL); triS.Add(lastPairR);
+                triS.Add(lastPairR); triS.Add(firstPairL); triS.Add(firstPairR);
+            }
+            else
+            {
+                triS.Add(lastPairL); triS.Add(lastPairR); triS.Add(firstPairL);
+                triS.Add(lastPairR); triS.Add(firstPairR); triS.Add(firstPairL);
+            }
+        }
+
         mesh.Clear();
         mesh.SetVertices(v);
         mesh.SetNormals(n);
         mesh.SetUVs(0, uv);
         mesh.SetTriangles(tri, 0);
         mesh.RecalculateBounds();
+
+        // Generar líneas de carril (pintura)
+        if (enableLaneLines && linesMesh != null)
+        {
+            int nC = centerline.Count;
+            var rights = new Vector3[nC];
+            for (int i = 0; i < nC; i++)
+            {
+                int inx = (isClosed ? (i + 1) % nC : Mathf.Min(i + 1, nC - 1));
+                Vector3 tan = ProjectOnPlaneSafe(centerline[inx] - centerline[i], up).normalized;
+                if (tan.sqrMagnitude < 1e-8f)
+                {
+                    int ip = (isClosed ? (i - 1 + nC) % nC : Mathf.Max(i - 1, 0));
+                    tan = ProjectOnPlaneSafe(centerline[i] - centerline[ip], up).normalized;
+                    if (tan.sqrMagnitude < 1e-8f) tan = Vector3.forward;
+                }
+                rights[i] = Vector3.Cross(tan, up).normalized;
+                if (rights[i].sqrMagnitude < 1e-8f) rights[i] = Vector3.right;
+            }
+
+            var vL = new List<Vector3>();
+            var nL = new List<Vector3>();
+            var uvL = new List<Vector2>();
+            var triL = new List<int>();
+            float lineOffset = surfaceOffset + 0.0006f; // elevar levemente sobre la carretera
+
+            bool ShouldDrawAtS(float s)
+            {
+                if (!centerLinesDashed) return true; // si no es discontinua, siempre dibuja
+                float period = Mathf.Max(1e-4f, dashLengthMeters + gapLengthMeters);
+                float phase = (s + dashOffsetMeters) % period;
+                return phase < dashLengthMeters;
+            }
+
+            System.Action<float, float, bool> addLineAtT = (tRel, width, dashed) =>
+            {
+                int baseIndex = vL.Count;
+                for (int i = 0; i < nC; i++)
+                {
+                    Vector3 center = centerline[i] + rights[i] * (tRel * 2f * half) + up * lineOffset;
+                    Vector3 r = rights[i];
+                    float hw = Mathf.Max(0.001f, width * 0.5f);
+                    Vector3 a = transform.InverseTransformPoint(center - r * hw);
+                    Vector3 b = transform.InverseTransformPoint(center + r * hw);
+                    vL.Add(a); vL.Add(b);
+                    nL.Add(localUp); nL.Add(localUp);
+                    float uval = cum[Mathf.Clamp(i, 0, cum.Count - 1)] * lineUvTilesPerMeter;
+                    uvL.Add(new Vector2(uval, 0f));
+                    uvL.Add(new Vector2(uval, 1f));
+                }
+                int stripVerts = nC * 2;
+                for (int i = 0; i < stripVerts - 2; i += 2)
+                {
+                    int i0 = baseIndex + i;
+                    // Distancia acumulada aproximada del segmento i/2
+                    int seg = i / 2;
+                    bool drawThis = true;
+                    if (dashed)
+                    {
+                        // Usar el centro del segmento para decidir dash/gap
+                        float sMid = 0f;
+                        if (seg >= 0 && seg < cum.Count - 1)
+                            sMid = 0.5f * (cum[seg] + cum[seg + 1]);
+                        drawThis = ShouldDrawAtS(sMid);
+                    }
+                    if (!drawThis) continue;
+                    if (ccwUp)
+                    {
+                        triL.Add(i0);     triL.Add(i0 + 2); triL.Add(i0 + 1);
+                        triL.Add(i0 + 1); triL.Add(i0 + 2); triL.Add(i0 + 3);
+                    }
+                    else
+                    {
+                        triL.Add(i0);     triL.Add(i0 + 1); triL.Add(i0 + 2);
+                        triL.Add(i0 + 1); triL.Add(i0 + 3); triL.Add(i0 + 2);
+                    }
+                }
+                if (isClosed)
+                {
+                    int lastPairL = baseIndex + stripVerts - 2;
+                    int lastPairR = baseIndex + stripVerts - 1;
+                    int firstPairL = baseIndex + 0;
+                    int firstPairR = baseIndex + 1;
+                    bool drawClose = true;
+                    if (dashed)
+                    {
+                        float sMid = 0.5f * (cum[^1] + 0f); // cierre aprox entre último y primero
+                        drawClose = ShouldDrawAtS(sMid);
+                    }
+                    if (drawClose && ccwUp)
+                    {
+                        triL.Add(lastPairL); triL.Add(firstPairL); triL.Add(lastPairR);
+                        triL.Add(lastPairR); triL.Add(firstPairL); triL.Add(firstPairR);
+                    }
+                    else if (drawClose)
+                    {
+                        triL.Add(lastPairL); triL.Add(lastPairR); triL.Add(firstPairL);
+                        triL.Add(lastPairR); triL.Add(firstPairR); triL.Add(firstPairL);
+                    }
+                }
+            };
+
+            int lanes = Mathf.Max(1, laneCount);
+            if (drawCenterLines && lanes >= 2)
+            {
+                for (int k = 1; k <= lanes - 1; k++)
+                {
+                    float tRel = Mathf.Lerp(-0.5f, 0.5f, k / (float)lanes);
+                    // Líneas internas discontinuas si centerLinesDashed
+                    addLineAtT(tRel, centerLineWidthMeters, centerLinesDashed);
+                }
+            }
+            if (drawEdgeLines)
+            {
+                addLineAtT(-0.5f, edgeLineWidthMeters, false);
+                addLineAtT( 0.5f, edgeLineWidthMeters, false);
+            }
+
+            linesMesh.Clear();
+            linesMesh.SetVertices(vL);
+            linesMesh.SetNormals(nL);
+            linesMesh.SetUVs(0, uvL);
+            linesMesh.SetTriangles(triL, 0);
+            linesMesh.RecalculateBounds();
+
+            if (linesMr && linesMr.sharedMaterial)
+            {
+                var mat = linesMr.sharedMaterial;
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", laneLineColor);
+                if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     laneLineColor);
+                if (laneLineTexture)
+                {
+                    if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", laneLineTexture);
+                    if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", laneLineTexture);
+                }
+            }
+        }
+
+        // Volcar sombra si corresponde
+        if (addUnderShadow && shadowMesh != null && shadowMr != null)
+        {
+            shadowMesh.Clear();
+            shadowMesh.SetVertices(vS);
+            shadowMesh.SetNormals(nS);
+            shadowMesh.SetUVs(0, uvS);
+            shadowMesh.SetTriangles(triS, 0);
+            shadowMesh.RecalculateBounds();
+            // Actualiza color si material lo soporta
+            var mat = shadowMr.sharedMaterial;
+            if (mat != null)
+            {
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", shadowColor);
+                if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     shadowColor);
+            }
+        }
 
         // Cache para seguidores
         lastCenterline.Clear();
@@ -1097,7 +1467,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
         lastClosed = isClosed;
         lastTotalWidth = totalWidth;
 
-    Debug.Log($"[Road] StablePts={controlPoints.Count}  Verts={v.Count}  Tris={tri.Count / 3}  Width={totalWidth:F3}m  Mode={widthMode}");
+        Debug.Log($"[Road] StablePts={controlPoints.Count}  Verts={v.Count}  Tris={tri.Count / 3}  Width={totalWidth:F3}m  Mode={widthMode}  Shadow={(addUnderShadow ? vS.Count : 0)}  Lines={(enableLaneLines ? (linesMesh != null ? linesMesh.vertexCount : 0) : 0)}");
     }
 
     // -------------------- Suavizado y joins --------------------
@@ -1395,8 +1765,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
             {
                 for (int li = 0; li < lanes; li++)
                 {
-                    // mapear li a [-0.5, 0.5]
-                    float t = (lanes == 1) ? 0f : (li / (float)(lanes - 1)) - 0.5f;
+                    // mapear li a [-0.5, 0.5] con margen
+                    float t = (lanes == 1) ? 0f : LaneIndexToTRel(li);
                     Gizmos.color = laneCenterColor;
                     for (int i = 0; i < lastCenterline.Count - 1; i += step)
                     {

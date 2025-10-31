@@ -205,9 +205,11 @@ public class RoadLaneFollower : MonoBehaviour
     {
         int lanes = (road ? Mathf.Max(1, road.LaneCountPublic) : 1);
         laneIndex = Mathf.Clamp(laneIndex, 0, lanes - 1);
-        // Mapea índice de carril a [-0.5, 0.5] uniformemente
+        // Mapea índice de carril a [-0.5, 0.5]
+        bool canUseRoadMap = road && road.PathReady && road.TotalWidthPublic > 1e-4f;
         if (lanes == 1) targetLaneT = 0f;
-        else targetLaneT = (laneIndex / (float)(lanes - 1)) - 0.5f;
+        else targetLaneT = canUseRoadMap ? road.LaneIndexToTRel(laneIndex)
+                                          : (laneIndex / (float)(lanes - 1)) - 0.5f;
     }
 
     // API pública para el botón de acelerar
