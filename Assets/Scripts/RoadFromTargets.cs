@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /**
  * @file RoadFromTargets.cs
@@ -30,8 +31,9 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public string pointChildName = "_tgt_point";  // Hijo dentro de cada TargetX
 
     [Header("Actualización")]
-    /// <summary>Si es true, se regenera cada frame; si es false, sólo en Start() o cuando lo invoques manualmente.</summary>
-    public bool updateEveryFrame = true;
+    [FormerlySerializedAs("updateEveryFrame")]
+    [Tooltip("Actualiza automáticamente solo si detecta cambios (posiciones o parámetros)")]
+    public bool updateIfChange = true;
     /// <summary>Número de muestras por tramo Catmull-Rom. Controla densidad de vértices.</summary>
     [Range(4, 64)] public int samplesPerSegment = 24;
     [Tooltip("Usar directamente los _tgt_point de 'Targets' sin lógica de estabilidad/visibilidad.")]
@@ -84,6 +86,19 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public bool snapNormalToWorldUp = true;
     /// <summary>Ángulo máximo para aplicar el snap a vertical (en grados).</summary>
     [Range(0f, 60f)] public float snapUpMaxAngle = 30f;
+
+    [Header("Ground Plane / Superficies (multi-altura)")]
+    [Tooltip("Habilita que cada target se 'ancle' a su propia superficie (Vuforia Anchor o Raycast) y que la carretera respete diferentes alturas.")]
+    public bool enablePerPointSurfaces = true;
+    public enum SurfaceSource { VuforiaAnchorOnTarget, PhysicsRaycastDown, UseTargetOrientation, None }
+    [Tooltip("Fuente de superficie por punto: Vuforia Anchor (si hay), Raycast hacia abajo, orientación del punto o ninguna.")]
+    public SurfaceSource perPointSurfaceSource = SurfaceSource.VuforiaAnchorOnTarget;
+    [Tooltip("Capa(s) para raycast de superficie (cuando se usa PhysicsRaycastDown).")]
+    public LayerMask surfaceRaycastLayers = ~0;
+    [Tooltip("Distancia máxima del raycast vertical (m).")]
+    [Range(0.1f, 10f)] public float surfaceRaycastMaxDistance = 3f;
+    [Tooltip("Cuando está activo, ajusta (proyecta) cada punto de control a su plano detectado antes de interpolar.")]
+    public bool snapControlPointsToSurface = true;
 
     [Header("Altura constante (opcional)")]
     [Tooltip("Fuerza que todos los puntos de entrada estén a la misma altura Y mundial (carretera totalmente plana).")]
@@ -158,6 +173,18 @@ public class RoadFromTargetsSticky : MonoBehaviour
     /// <summary>Desplazamiento mínimo para aplicar actualización (m).</summary>
     public float minDeltaToUpdate = 0.003f;     // umbral de movimiento (m)
 
+    [Header("Filtro de temblor de mano")]
+    [Tooltip("Activa un filtro extra para ignorar micro-movimientos de la mano y aplicar la actualización más despacio")]
+    public bool tremorFilter = true;
+    [Tooltip("Deadzone extra sumada a minDeltaToUpdate (m)")]
+    [Range(0f, 0.05f)] public float tremorDeadzoneMeters = 0.01f;
+    [Tooltip("Número de frames consecutivos por encima del umbral antes de aplicar actualización")]
+    [Range(0, 10)] public int tremorHoldFrames = 2;
+    [Tooltip("Límite de desplazamiento aplicado por frame cuando se autoriza una actualización (m)")]
+    [Range(0f, 0.1f)] public float tremorMaxStepMeters = 0.02f;
+    [Tooltip("Lerp adicional para tremor (0=fuerte suavizado, 1=sin suavizado extra)")]
+    [Range(0f, 1f)] public float tremorLerp = 0.25f;
+
     [Header("Visibilidad")]
     [Tooltip("Levanta la carretera del plano para evitar z-fighting (metros).")]
     /// <summary>Offset en metros para elevar la malla y evitar z-fighting con el feed de cámara.</summary>
@@ -192,6 +219,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
     [Range(0.02f, 2f)] public float gapLengthMeters = 0.35f;
     [Tooltip("Desfase inicial del patrón (m)")]
     public float dashOffsetMeters = 0f;
+    [Tooltip("Elevación de las líneas sobre el asfalto para evitar z-fighting (m)")]
+    [Range(0f, 0.01f)] public float linesLiftOffsetMeters = 0.0015f;
 
     [Header("Sombra bajo la carretera")]
     [Tooltip("Dibuja una malla extra, un poco más ancha y ligeramente por debajo, para simular sombra.")]
@@ -261,6 +290,13 @@ public class RoadFromTargetsSticky : MonoBehaviour
     Vector3 lastUpVec = Vector3.up;
     bool lastClosed = false;
     float lastTotalWidth = 0f;
+    int lastHash = 0; // deprecated (kept for compatibility)
+    // Rebuild gating
+    [Header("Actualización condicional")]
+    [Tooltip("No regenerar la carretera salvo que los puntos se muevan más de este umbral (m)")]
+    [Range(0f, 0.2f)] public float minRebuildPosDeltaMeters = 0.05f;
+    List<Vector3> lastCtrlPositionsCache = new();
+    int lastParamHash = 0;
 
     // Accesores públicos mínimos para seguidores externos
     public bool PathReady => lastCenterline != null && lastCenterline.Count >= 2;
@@ -341,6 +377,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         public Quaternion stableRot;
         public int orderIndex = int.MaxValue;   // índice en jerarquía
         public string name;
+        // Filtro de temblor
+        public int tremorFramesAccum = 0;
     }
 
     readonly List<ProxyState> proxies = new();
@@ -479,8 +517,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         if (detectionOrderManager != null)
             detectionOrderManager.OnOrderChanged -= Tick;
     }
-    /// <summary>Si <c>updateEveryFrame</c> es true, regenera cada frame.</summary>
-    void Update() { if (updateEveryFrame) Tick(); }
+    /// <summary>Si <c>updateIfChange</c> es true, comprueba cambios cada frame y regenera solo si cambió.</summary>
+    void Update() { if (updateIfChange) Tick(); }
 
     // -------------------- Bucle principal --------------------
     /**
@@ -546,7 +584,92 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         var finalPts = ApplyConnectMode(pts);
+        // Determinar si hay CAMBIO GRANDE en puntos
+        bool bigChange = IsBigChange(finalPts, lastCtrlPositionsCache, minRebuildPosDeltaMeters);
+        // Hash sólo de parámetros (no posiciones) para detectar cambios de configuración
+        int paramHash = ComputeParamHash();
+        bool paramChanged = (paramHash != lastParamHash);
+        if (!paramChanged && !bigChange)
+        {
+            // Sólo actualiza renderers on/off y cache de puntos para gizmos
+            lastUsedControlPoints.Clear();
+            if (finalPts != null) lastUsedControlPoints.AddRange(finalPts);
+            if (mr) mr.enabled = !hideRoadMesh;
+            if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
+            if (linesMr) linesMr.enabled = enableLaneLines && !hideRoadMesh;
+            return;
+        }
         RenderOrCache(finalPts);
+        // Snapshot para siguiente comparación
+        lastCtrlPositionsCache.Clear();
+        if (finalPts != null)
+        {
+            for (int i = 0; i < finalPts.Count; i++)
+            {
+                var t = finalPts[i]; if (t) lastCtrlPositionsCache.Add(t.position);
+            }
+        }
+        lastParamHash = paramHash;
+    }
+
+    int ComputeParamHash()
+    {
+        int h = 17;
+        unchecked
+        {
+            h = h * 31 + samplesPerSegment;
+            h = h * 31 + (flattenToTargetsPlane ? 1 : 0);
+            h = h * 31 + (forceTargetsSameHeight ? 1 : 0);
+            h = h * 31 + heightReferenceMode.GetHashCode();
+            h = h * 31 + laneCount;
+            h = h * 31 + widthMode.GetHashCode();
+            h = h * 31 + laneWidthMeters.GetHashCode();
+            h = h * 31 + laneWidthFraction.GetHashCode();
+            h = h * 31 + maxWidthVsMinSeg.GetHashCode();
+            h = h * 31 + minTotalWidthMeters.GetHashCode();
+            h = h * 31 + maxTotalWidthMeters.GetHashCode();
+            h = h * 31 + (adaptiveWidthInCurves ? 1 : 0);
+            h = h * 31 + minWidthScaleAtSharpTurn.GetHashCode();
+            h = h * 31 + angleForMinWidth.GetHashCode();
+            h = h * 31 + angleStartNarrow.GetHashCode();
+            h = h * 31 + (useRoundedJoins ? 1 : 0);
+            h = h * 31 + roundSegmentsPer90;
+            h = h * 31 + (rotateSeamToLowestCurvature ? 1 : 0);
+            h = h * 31 + surfaceOffset.GetHashCode();
+            // Líneas/sombra
+            h = h * 31 + (enableLaneLines ? 1 : 0);
+            h = h * 31 + centerLineWidthMeters.GetHashCode();
+            h = h * 31 + edgeLineWidthMeters.GetHashCode();
+            h = h * 31 + lineUvTilesPerMeter.GetHashCode();
+            h = h * 31 + (centerLinesDashed ? 1 : 0);
+            h = h * 31 + dashLengthMeters.GetHashCode();
+            h = h * 31 + gapLengthMeters.GetHashCode();
+            h = h * 31 + dashOffsetMeters.GetHashCode();
+            h = h * 31 + linesLiftOffsetMeters.GetHashCode();
+            h = h * 31 + (addUnderShadow ? 1 : 0);
+            h = h * 31 + shadowExtraWidthMeters.GetHashCode();
+            h = h * 31 + shadowUnderOffset.GetHashCode();
+            h = h * 31 + shadowColor.GetHashCode();
+            h = h * 31 + outerLaneEdgeMargin.GetHashCode();
+        }
+        return h;
+    }
+
+    static bool IsBigChange(List<Transform> a, List<Vector3> last, float threshold)
+    {
+        if (a == null || a.Count == 0) return false;
+        if (last == null || last.Count == 0) return true;
+        if (a.Count != last.Count) return true;
+        float th = Mathf.Max(0f, threshold);
+        float max = 0f;
+        for (int i = 0; i < a.Count; i++)
+        {
+            var t = a[i]; if (!t) continue;
+            float d = Vector3.Distance(t.position, last[i]);
+            if (d > max) max = d;
+            if (max >= th) return true;
+        }
+        return false;
     }
 
     // Habilita/deshabilita render según 'hideRoadMesh', y en cualquier caso cachea los puntos para gizmos
@@ -745,11 +868,38 @@ public class RoadFromTargetsSticky : MonoBehaviour
                     {
                         float delta = (candPos - st.stablePos).magnitude;
                         bool firstUpdate = st.proxyPoint.position == Vector3.zero; // Heurística para la primera actualización
-                        if (delta >= minDeltaToUpdate || firstUpdate)
+                        float thr = Mathf.Max(0f, minDeltaToUpdate + (tremorFilter ? tremorDeadzoneMeters : 0f));
+                        if ((delta >= thr) || firstUpdate)
                         {
-                            st.stablePos = Vector3.Lerp(st.stablePos, candPos, updateLerp);
-                            st.stableRot = Quaternion.Slerp(st.stableRot, candRot, updateLerp);
-                            st.proxyPoint.SetPositionAndRotation(st.stablePos, st.stableRot);
+                            bool allowNow = true;
+                            if (tremorFilter && !firstUpdate)
+                            {
+                                st.tremorFramesAccum++;
+                                allowNow = (st.tremorFramesAccum >= Mathf.Max(0, tremorHoldFrames));
+                            }
+                            if (allowNow)
+                            {
+                                st.tremorFramesAccum = 0;
+                                // Lerp combinado (updateLerp base y tremorLerp extra)
+                                float a = Mathf.Clamp01(updateLerp);
+                                float b = tremorFilter ? Mathf.Clamp01(tremorLerp) : 1f;
+                                float w = Mathf.Clamp01(a * b);
+                                Vector3 target = Vector3.Lerp(st.stablePos, candPos, w);
+                                if (tremorFilter && tremorMaxStepMeters > 0f)
+                                {
+                                    Vector3 step = target - st.stablePos;
+                                    float maxStep = tremorMaxStepMeters;
+                                    if (step.magnitude > maxStep) target = st.stablePos + step.normalized * maxStep;
+                                }
+                                st.stablePos = target;
+                                st.stableRot = Quaternion.Slerp(st.stableRot, candRot, w);
+                                st.proxyPoint.SetPositionAndRotation(st.stablePos, st.stableRot);
+                            }
+                        }
+                        else if (tremorFilter)
+                        {
+                            // por debajo del umbral: reset contador para evitar acumular por ruido
+                            st.tremorFramesAccum = 0;
                         }
                     }
                 }
@@ -758,6 +908,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             {
                 st.invisibleFrames++;
                 // mantenemos su última pose estable
+                if (tremorFilter) st.tremorFramesAccum = 0;
             }
         }
     }
@@ -1327,7 +1478,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             var nL = new List<Vector3>();
             var uvL = new List<Vector2>();
             var triL = new List<int>();
-            float lineOffset = surfaceOffset + 0.0006f; // elevar levemente sobre la carretera
+            float lineOffset = surfaceOffset + Mathf.Max(0f, linesLiftOffsetMeters); // elevar levemente sobre la carretera
 
             bool ShouldDrawAtS(float s)
             {
