@@ -87,19 +87,6 @@ public class RoadFromTargetsSticky : MonoBehaviour
     /// <summary>Ángulo máximo para aplicar el snap a vertical (en grados).</summary>
     [Range(0f, 60f)] public float snapUpMaxAngle = 30f;
 
-    [Header("Ground Plane / Superficies (multi-altura)")]
-    [Tooltip("Habilita que cada target se 'ancle' a su propia superficie (Vuforia Anchor o Raycast) y que la carretera respete diferentes alturas.")]
-    public bool enablePerPointSurfaces = true;
-    public enum SurfaceSource { VuforiaAnchorOnTarget, PhysicsRaycastDown, UseTargetOrientation, None }
-    [Tooltip("Fuente de superficie por punto: Vuforia Anchor (si hay), Raycast hacia abajo, orientación del punto o ninguna.")]
-    public SurfaceSource perPointSurfaceSource = SurfaceSource.VuforiaAnchorOnTarget;
-    [Tooltip("Capa(s) para raycast de superficie (cuando se usa PhysicsRaycastDown).")]
-    public LayerMask surfaceRaycastLayers = ~0;
-    [Tooltip("Distancia máxima del raycast vertical (m).")]
-    [Range(0.1f, 10f)] public float surfaceRaycastMaxDistance = 3f;
-    [Tooltip("Cuando está activo, ajusta (proyecta) cada punto de control a su plano detectado antes de interpolar.")]
-    public bool snapControlPointsToSurface = true;
-
     [Header("Altura constante (opcional)")]
     [Tooltip("Fuerza que todos los puntos de entrada estén a la misma altura Y mundial (carretera totalmente plana).")]
     public bool forceTargetsSameHeight = false;
@@ -184,6 +171,12 @@ public class RoadFromTargetsSticky : MonoBehaviour
     [Range(0f, 0.1f)] public float tremorMaxStepMeters = 0.02f;
     [Tooltip("Lerp adicional para tremor (0=fuerte suavizado, 1=sin suavizado extra)")]
     [Range(0f, 1f)] public float tremorLerp = 0.25f;
+
+    [Header("Congelar tras estabilidad")]
+    [Tooltip("Cuando un punto alcanza estabilidad por primera vez, deja de actualizar su proxy (mantiene fija la forma).")]
+    public bool freezeProxyAfterFirstStable = false;
+    [Tooltip("Cuando el plano queda bloqueado (tras suficientes puntos), no se regenera la malla de carretera.")]
+    public bool freezeRoadAfterPlaneLocked = false;
 
     [Header("Visibilidad")]
     [Tooltip("Levanta la carretera del plano para evitar z-fighting (metros).")]
@@ -687,6 +680,10 @@ public class RoadFromTargetsSticky : MonoBehaviour
         if (mr) mr.enabled = true;
             if (linesMr) linesMr.enabled = enableLaneLines;
         if (shadowMr) shadowMr.enabled = addUnderShadow;
+        if (freezeRoadAfterPlaneLocked && planeLocked)
+        {
+            return;
+        }
         GenerateRoad(controlPoints);
     }
 
@@ -864,6 +861,11 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 }
                 else
                 {
+                    if (freezeProxyAfterFirstStable)
+                    {
+                        // Mantener pose estable y no actualizar más
+                        continue;
+                    }
                     if ((candPos - st.stablePos).magnitude <= maxReacquireJump)
                     {
                         float delta = (candPos - st.stablePos).magnitude;
@@ -1041,41 +1043,12 @@ public class RoadFromTargetsSticky : MonoBehaviour
 
         // Copia posiciones y, si hay duplicado final, quítalo para muestrear como bucle cerrado real
         var ctrl = new List<Vector3>(controlPoints.Count);
-        var ctrlUps = new List<Vector3>(controlPoints.Count);
         int countToCopy = controlPoints.Count;
         if (controlClosed && countToCopy >= 2) countToCopy -= 1; // elimina el duplicado final
         for (int i = 0; i < countToCopy; i++)
         {
             var t = controlPoints[i];
-            if (!t) continue;
-            Vector3 pos = t.position;
-            Vector3 upForPoint = Vector3.zero;
-            Vector3 surfPoint = Vector3.zero;
-            Vector3 surfNormal = Vector3.zero;
-            bool multiSurf = enablePerPointSurfaces;
-            if (multiSurf && TryGetSurfaceForPoint(t, out surfPoint, out surfNormal))
-            {
-                upForPoint = surfNormal.normalized;
-                if (snapControlPointsToSurface)
-                {
-                    // Proyecta la posición del punto sobre el plano detectado
-                    float d = Vector3.Dot(pos - surfPoint, upForPoint);
-                    pos = pos - upForPoint * d;
-                }
-            }
-            else
-            {
-                // Fallback: usa orientación del punto o up global
-                if (derivePlaneFromPointOrientation && !ignoreTargetRotations)
-                {
-                    // Selecciona eje local del punto
-                    upForPoint = (autoChoosePlaneAxis ? AutoChooseUpFromTransform(t) :
-                        (planeNormalAxis == OrientationAxis.Up ? t.up : (planeNormalAxis == OrientationAxis.Forward ? t.forward : t.right)));
-                }
-                if (upForPoint.sqrMagnitude < 1e-6f) upForPoint = Vector3.up;
-            }
-            ctrl.Add(pos);
-            ctrlUps.Add(upForPoint.normalized);
+            if (t) ctrl.Add(t.position);
         }
 
         // Opcional: forzar todos los puntos a compartir la misma Y mundial
@@ -1099,27 +1072,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
             for (int i = 0; i < ctrl.Count; i++) ctrl[i] = new Vector3(ctrl[i].x, yRef, ctrl[i].z);
         }
 
-        // Normal global de respaldo: bloqueada, derivada u geométrica (usada si no hay multi-superficie)
+        // Normal del plano: bloqueada, derivada de orientación (si no se ignoran rotaciones), o geométrica
         Vector3 up = planeLocked ? lockedUp : Vector3.zero;
-        if (!enablePerPointSurfaces)
+        if (!planeLocked && derivePlaneFromPointOrientation && !ignoreTargetRotations)
         {
-            if (!planeLocked && derivePlaneFromPointOrientation && !ignoreTargetRotations)
-            {
-                up = ComputeUpFromPointOrientation(controlPoints);
-            }
-            if (up.sqrMagnitude < 1e-6f)
-            {
-                up = ComputePlaneNormal(ctrl);
-            }
-            if (snapNormalToWorldUp)
-            {
-                float aUp = Vector3.Angle(up, Vector3.up);
-                float aDown = Vector3.Angle(up, Vector3.down);
-                if (aUp <= snapUpMaxAngle) up = Vector3.up; else if (aDown <= snapUpMaxAngle) up = Vector3.down;
-            }
-            if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
-            up.Normalize();
+            up = ComputeUpFromPointOrientation(controlPoints);
         }
+        if (up.sqrMagnitude < 1e-6f)
+        {
+            up = ComputePlaneNormal(ctrl);
+        }
+        if (snapNormalToWorldUp)
+        {
+            float aUp = Vector3.Angle(up, Vector3.up);
+            float aDown = Vector3.Angle(up, Vector3.down);
+            if (aUp <= snapUpMaxAngle) up = Vector3.up; else if (aDown <= snapUpMaxAngle) up = Vector3.down;
+        }
+        if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+        up.Normalize();
         // Centroide como referencia del plano para una proyección más neutra
         Vector3 planePoint = planeLocked ? lockedPoint : ComputeCentroid(ctrl);
         // Si se fuerza altura constante, el plano es horizontal y pasa por Y=yRef
@@ -1129,12 +1099,10 @@ public class RoadFromTargetsSticky : MonoBehaviour
             planePoint.y = yRef;
         }
 
-        List<float> cum;
-        var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum, controlClosed);
+    List<float> cum;
+    var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum, controlClosed);
 
-        // Con multi-superficie, no aplanamos a un único plano global (conserva alturas)
-        bool useGlobalFlatten = (flattenToTargetsPlane || forceTargetsSameHeight) && !enablePerPointSurfaces;
-        if (useGlobalFlatten)
+        if (flattenToTargetsPlane || forceTargetsSameHeight)
         {
             for (int i = 0; i < centerline.Count; i++)
             {
@@ -1171,61 +1139,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
             }
         }
 
-        // Recompute cumulative distance after changes
-        cum = ComputeCumulative(centerline);
-
-        // Calcular up por muestra: si multi-superficie, mezclar ups de los 2 control points más cercanos
-        var sampleUps = new List<Vector3>(centerline.Count);
-        if (enablePerPointSurfaces && ctrl.Count >= 1 && ctrlUps.Count == ctrl.Count)
-        {
-            for (int i = 0; i < centerline.Count; i++)
-            {
-                Vector3 p = centerline[i];
-                // Encuentra los dos puntos de control más cercanos
-                int j0 = -1, j1 = -1; float d0 = float.MaxValue, d1 = float.MaxValue;
-                for (int j = 0; j < ctrl.Count; j++)
-                {
-                    float dj = (p - ctrl[j]).sqrMagnitude;
-                    if (dj < d0)
-                    {
-                        d1 = d0; j1 = j0;
-                        d0 = dj; j0 = j;
-                    }
-                    else if (dj < d1)
-                    {
-                        d1 = dj; j1 = j;
-                    }
-                }
-                Vector3 u = Vector3.up;
-                if (j0 >= 0)
-                {
-                    float w0 = 1f / Mathf.Max(1e-6f, Mathf.Sqrt(d0));
-                    if (j1 >= 0)
-                    {
-                        float w1 = 1f / Mathf.Max(1e-6f, Mathf.Sqrt(d1));
-                        u = (ctrlUps[j0] * w0 + ctrlUps[j1] * w1);
-                    }
-                    else u = ctrlUps[j0];
-                }
-                if (u.sqrMagnitude < 1e-6f) u = Vector3.up; else u.Normalize();
-                // Snap a world up si está cerca
-                if (snapNormalToWorldUp)
-                {
-                    float aUpS = Vector3.Angle(u, Vector3.up);
-                    float aDownS = Vector3.Angle(u, Vector3.down);
-                    if (aUpS <= snapUpMaxAngle) u = Vector3.up; else if (aDownS <= snapUpMaxAngle) u = Vector3.down;
-                }
-                sampleUps.Add(u);
-            }
-            // Up de respaldo para gizmos/seguidores: promedio de sampleUps
-            Vector3 sumUp = Vector3.zero; for (int i = 0; i < sampleUps.Count; i++) sumUp += sampleUps[i];
-            if (sumUp.sqrMagnitude > 1e-6f) up = (sumUp / sampleUps.Count).normalized; else up = Vector3.up;
-        }
-        else
-        {
-            for (int i = 0; i < centerline.Count; i++) sampleUps.Add((up.sqrMagnitude < 1e-6f) ? Vector3.up : up);
-            if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
-        }
+    // Recompute cumulative distance after changes
+    cum = ComputeCumulative(centerline);
 
         // ancho auto
     float avgSeg = AverageSegment(ctrl);    //!< distancia media de segmento: mean(|p[i+1]-p[i]|) para i=0..N-2
@@ -1241,19 +1156,17 @@ public class RoadFromTargetsSticky : MonoBehaviour
     totalWidth = Mathf.Clamp(totalWidth, wMin, wMax);
     float half = totalWidth * 0.5f;
 
-        var v = new List<Vector3>(centerline.Count * 2);
-        var n = new List<Vector3>(centerline.Count * 2);
+    var v = new List<Vector3>(centerline.Count * 2);
+    var n = new List<Vector3>(centerline.Count * 2);
     var uv = new List<Vector2>(centerline.Count * 2);
     var tri = new List<int>((centerline.Count - 1) * 6);
     // Buffers de sombra
     var vS = new List<Vector3>(centerline.Count * 2);
-        var nS = new List<Vector3>(centerline.Count * 2);
+    var nS = new List<Vector3>(centerline.Count * 2);
     var uvS = new List<Vector2>(centerline.Count * 2);
     var triS = new List<int>((centerline.Count - 1) * 6);
 
-        // Guardaremos también el up usado por cada par para asignar normales por-vértice
-        var pairUps = new List<Vector3>();
-        var spairUps = new List<Vector3>();
+    Vector3 localUp = transform.InverseTransformDirection(up).normalized;
 
     // Construye pares L/R siguiendo todo el recorrido con posibilidad de joins redondeados
     var pairsL = new List<Vector3>();
@@ -1276,9 +1189,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 inx = (idx + 1) % nC;
             }
             Vector3 p = centerline[idx];
-            Vector3 upI = sampleUps[Mathf.Clamp(idx, 0, sampleUps.Count - 1)];
-            Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], upI).normalized;
-            Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, upI).normalized;
+            Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], up).normalized;
+            Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, up).normalized;
             if (d0.sqrMagnitude < 1e-8f) d0 = d1;
             if (d1.sqrMagnitude < 1e-8f) d1 = d0;
             float ang = Vector3.Angle(d0, d1); // 0 recto, 180 giro en U
@@ -1291,27 +1203,25 @@ public class RoadFromTargetsSticky : MonoBehaviour
             return Mathf.Lerp(1f, sMin, tA);
         };
 
-        System.Action<Vector3, Vector3, float, float, Vector3> addPairSimple = (p, dir, uval, scale, upAt) =>
+        System.Action<Vector3, Vector3, float, float> addPairSimple = (p, dir, uval, scale) =>
         {
-            Vector3 tdir = ProjectOnPlaneSafe(dir, upAt).normalized;
+            Vector3 tdir = ProjectOnPlaneSafe(dir, up).normalized;
             if (tdir.sqrMagnitude < 1e-8f) tdir = Vector3.forward;
-            Vector3 right = Vector3.Cross(tdir, upAt).normalized;
+            Vector3 right = Vector3.Cross(tdir, up).normalized;
             if (right.sqrMagnitude < 1e-8f) right = Vector3.right;
             float h = half * Mathf.Clamp(scale, 0.1f, 1f);
             // Carretera
-            pairsL.Add(p - right * h + upAt * surfaceOffset);
-            pairsR.Add(p + right * h + upAt * surfaceOffset);
+            pairsL.Add(p - right * h + up * surfaceOffset);
+            pairsR.Add(p + right * h + up * surfaceOffset);
             pairsU.Add(uval);
-            pairUps.Add(upAt);
             // Sombra
             if (addUnderShadow)
             {
                 float hs = (h + Mathf.Max(0f, shadowExtraWidthMeters));
                 float soff = surfaceOffset + shadowUnderOffset; // normalmente menor que surfaceOffset
-                spairsL.Add(p - right * hs + upAt * soff);
-                spairsR.Add(p + right * hs + upAt * soff);
+                spairsL.Add(p - right * hs + up * soff);
+                spairsR.Add(p + right * hs + up * soff);
                 spairsU.Add(uval);
-                spairUps.Add(upAt);
             }
         };
 
@@ -1321,23 +1231,20 @@ public class RoadFromTargetsSticky : MonoBehaviour
             Vector3 offsetL, offsetR;
             float scale = widthScaleAtIndex(iIdx);
             float h = half * Mathf.Clamp(scale, 0.1f, 1f);
-            Vector3 upI = sampleUps[Mathf.Clamp(iIdx, 0, sampleUps.Count - 1)];
-            ComputeMiterOffsets(centerline, iIdx, upI, h, miterLimit, isClosed, out offsetL, out offsetR);
-            pairsL.Add(p + offsetL + upI * surfaceOffset);
-            pairsR.Add(p + offsetR + upI * surfaceOffset);
+            ComputeMiterOffsets(centerline, iIdx, up, h, miterLimit, isClosed, out offsetL, out offsetR);
+            pairsL.Add(p + offsetL + up * surfaceOffset);
+            pairsR.Add(p + offsetR + up * surfaceOffset);
             float u = cum[Mathf.Clamp(iIdx, 0, cum.Count - 1)] * uvTilesPerMeter;
             pairsU.Add(u);
-            pairUps.Add(upI);
             if (addUnderShadow)
             {
                 // Para la sombra, expandimos extra hacia fuera manteniendo la dirección del offset
                 Vector3 offL = offsetL.normalized * (offsetL.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
                 Vector3 offR = offsetR.normalized * (offsetR.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
                 float soff = surfaceOffset + shadowUnderOffset;
-                spairsL.Add(p + offL + upI * soff);
-                spairsR.Add(p + offR + upI * soff);
+                spairsL.Add(p + offL + up * soff);
+                spairsR.Add(p + offR + up * soff);
                 spairsU.Add(u);
-                spairUps.Add(upI);
             }
         };
 
@@ -1349,15 +1256,14 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int ip = (i - 1 + nC) % nC;
                 int inx = (i + 1) % nC;
                 Vector3 p = centerline[i];
-                Vector3 upI = sampleUps[i];
-                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], upI).normalized;
-                Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, upI).normalized;
+                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], up).normalized;
+                Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, up).normalized;
                 if (d0.sqrMagnitude < 1e-8f) d0 = d1;
                 if (d1.sqrMagnitude < 1e-8f) d1 = d0;
 
                 if (useRoundedJoins)
                 {
-                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, upI), -180f, 180f);
+                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, up), -180f, 180f);
                     float absAng = Mathf.Abs(ang);
                     int steps = Mathf.Max(1, Mathf.CeilToInt((absAng / 90f) * roundSegmentsPer90));
                     for (int k = 0; k <= steps; k++)
@@ -1365,7 +1271,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                         float t = (steps == 0) ? 1f : (k / (float)steps);
                         Vector3 dir = Vector3.Slerp(d0, d1, t);
                         float sc = widthScaleAtIndex(i);
-                        addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc, upI);
+                        addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc);
                     }
                 }
                 else if (useMiterJoins)
@@ -1378,7 +1284,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                     Vector3 dir = (d0 + d1);
                     if (dir.sqrMagnitude < 1e-8f) dir = d1;
                     float sc = widthScaleAtIndex(i);
-                    addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc, upI);
+                    addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc);
                 }
             }
         }
@@ -1389,22 +1295,20 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int i0 = 0; int i1 = (centerline.Count > 1) ? 1 : 0;
                 Vector3 dir = (centerline[i1] - centerline[i0]);
                 float sc0 = widthScaleAtIndex(i0);
-                Vector3 up0 = sampleUps[Mathf.Clamp(i0, 0, sampleUps.Count - 1)];
-                addPairSimple(centerline[i0], dir, cum[i0] * uvTilesPerMeter, sc0, up0);
+                addPairSimple(centerline[i0], dir, cum[i0] * uvTilesPerMeter, sc0);
             }
 
             for (int i = 1; i < centerline.Count - 1; i++)
             {
                 Vector3 p = centerline[i];
-                Vector3 upI = sampleUps[i];
-                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[i - 1], upI).normalized;
-                Vector3 d1 = ProjectOnPlaneSafe(centerline[i + 1] - p, upI).normalized;
+                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[i - 1], up).normalized;
+                Vector3 d1 = ProjectOnPlaneSafe(centerline[i + 1] - p, up).normalized;
                 if (d0.sqrMagnitude < 1e-8f) d0 = d1;
                 if (d1.sqrMagnitude < 1e-8f) d1 = d0;
 
                 if (useRoundedJoins)
                 {
-                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, upI), -180f, 180f);
+                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, up), -180f, 180f);
                     float absAng = Mathf.Abs(ang);
                     int steps = Mathf.Max(1, Mathf.CeilToInt((absAng / 90f) * roundSegmentsPer90));
                     for (int k = 0; k <= steps; k++)
@@ -1412,7 +1316,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                         float t = (steps == 0) ? 1f : (k / (float)steps);
                         Vector3 dir = Vector3.Slerp(d0, d1, t);
                         float sc = widthScaleAtIndex(i);
-                        addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc, upI);
+                        addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc);
                     }
                 }
                 else if (useMiterJoins)
@@ -1423,7 +1327,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 {
                     Vector3 dir = (centerline[i + 1] - centerline[i]);
                     float sc = widthScaleAtIndex(i);
-                    addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc, upI);
+                    addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc);
                 }
             }
 
@@ -1432,8 +1336,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int last = centerline.Count - 1;
                 Vector3 dir = (centerline[last] - centerline[last - 1]);
                 float scl = widthScaleAtIndex(last);
-                Vector3 upL = sampleUps[Mathf.Clamp(last, 0, sampleUps.Count - 1)];
-                addPairSimple(centerline[last], dir, cum[last] * uvTilesPerMeter, scl, upL);
+                addPairSimple(centerline[last], dir, cum[last] * uvTilesPerMeter, scl);
             }
         }
 
@@ -1446,8 +1349,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             Vector3 Ll = transform.InverseTransformPoint(pairsL[i]);
             Vector3 Rl = transform.InverseTransformPoint(pairsR[i]);
             v.Add(Ll); v.Add(Rl);
-            Vector3 localUpI = transform.InverseTransformDirection(pairUps[Mathf.Clamp(i, 0, pairUps.Count - 1)]).normalized;
-            n.Add(localUpI); n.Add(localUpI);
+            n.Add(localUp); n.Add(localUp);
             float uval = pairsU[i];
             uv.Add(new Vector2(uval, 0f));
             uv.Add(new Vector2(uval, 1f));
@@ -1460,8 +1362,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 Vector3 Ll = transform.InverseTransformPoint(spairsL[i]);
                 Vector3 Rl = transform.InverseTransformPoint(spairsR[i]);
                 vS.Add(Ll); vS.Add(Rl);
-                Vector3 localUpI = transform.InverseTransformDirection(spairUps[Mathf.Clamp(i, 0, spairUps.Count - 1)]).normalized;
-                nS.Add(localUpI); nS.Add(localUpI);
+                nS.Add(localUp); nS.Add(localUp);
                 float uval = spairsU[i];
                 uvS.Add(new Vector2(uval, 0f));
                 uvS.Add(new Vector2(uval, 1f));
@@ -1474,8 +1375,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
         {
             Vector3 a = v[1] - v[0]; // L0->R0
             Vector3 b = v[2] - v[0]; // L0->L1
-            Vector3 firstUpLocal = (pairUps.Count > 0) ? transform.InverseTransformDirection(pairUps[0]).normalized : Vector3.up;
-            float s = Vector3.Dot(Vector3.Cross(a, b), firstUpLocal);
+            float s = Vector3.Dot(Vector3.Cross(a, b), localUp);
             ccwUp = s > 0f;
         }
 
@@ -1565,15 +1465,14 @@ public class RoadFromTargetsSticky : MonoBehaviour
             for (int i = 0; i < nC; i++)
             {
                 int inx = (isClosed ? (i + 1) % nC : Mathf.Min(i + 1, nC - 1));
-                Vector3 upI = sampleUps[i];
-                Vector3 tan = ProjectOnPlaneSafe(centerline[inx] - centerline[i], upI).normalized;
+                Vector3 tan = ProjectOnPlaneSafe(centerline[inx] - centerline[i], up).normalized;
                 if (tan.sqrMagnitude < 1e-8f)
                 {
                     int ip = (isClosed ? (i - 1 + nC) % nC : Mathf.Max(i - 1, 0));
-                    tan = ProjectOnPlaneSafe(centerline[i] - centerline[ip], upI).normalized;
+                    tan = ProjectOnPlaneSafe(centerline[i] - centerline[ip], up).normalized;
                     if (tan.sqrMagnitude < 1e-8f) tan = Vector3.forward;
                 }
-                rights[i] = Vector3.Cross(tan, upI).normalized;
+                rights[i] = Vector3.Cross(tan, up).normalized;
                 if (rights[i].sqrMagnitude < 1e-8f) rights[i] = Vector3.right;
             }
 
@@ -1602,8 +1501,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                     Vector3 a = transform.InverseTransformPoint(center - r * hw);
                     Vector3 b = transform.InverseTransformPoint(center + r * hw);
                     vL.Add(a); vL.Add(b);
-                    Vector3 localUpI = transform.InverseTransformDirection(sampleUps[i]).normalized;
-                    nL.Add(localUpI); nL.Add(localUpI);
+                    nL.Add(localUp); nL.Add(localUp);
                     float uval = cum[Mathf.Clamp(i, 0, cum.Count - 1)] * lineUvTilesPerMeter;
                     uvL.Add(new Vector2(uval, 0f));
                     uvL.Add(new Vector2(uval, 1f));
@@ -2262,101 +2160,5 @@ public class RoadFromTargetsSticky : MonoBehaviour
             if (n.sqrMagnitude > 1e-10f) sum += n.normalized;
         }
         return (sum.sqrMagnitude < 1e-6f) ? Vector3.up : sum.normalized;
-    }
-
-    // -------------------- Superficies (Vuforia / Física) --------------------
-    bool TryGetSurfaceForPoint(Transform t, out Vector3 planePoint, out Vector3 planeNormal)
-    {
-        planePoint = t ? t.position : Vector3.zero;
-        planeNormal = Vector3.zero;
-        switch (perPointSurfaceSource)
-        {
-            case SurfaceSource.None:
-                return false;
-            case SurfaceSource.UseTargetOrientation:
-            {
-                planeNormal = AutoChooseUpFromTransform(t);
-                if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
-                return true;
-            }
-            case SurfaceSource.PhysicsRaycastDown:
-            {
-                // Probar hacia abajo y hacia arriba, el más cercano gana
-                Vector3 origin = t ? t.position : Vector3.zero;
-                float maxDist = Mathf.Max(0.01f, surfaceRaycastMaxDistance);
-                RaycastHit hit;
-                bool hitDown = Physics.Raycast(origin + Vector3.up * 0.01f, Vector3.down, out hit, maxDist + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore);
-                float dDown = hitDown ? hit.distance : float.MaxValue;
-                RaycastHit hitUp;
-                bool hitUpB = Physics.Raycast(origin + Vector3.down * 0.01f, Vector3.up, out hitUp, maxDist + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore);
-                float dUp = hitUpB ? hitUp.distance : float.MaxValue;
-                if (hitDown || hitUpB)
-                {
-                    if (dDown <= dUp)
-                    {
-                        planePoint = hit.point;
-                        planeNormal = hit.normal;
-                    }
-                    else
-                    {
-                        planePoint = hitUp.point;
-                        planeNormal = hitUp.normal;
-                    }
-                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
-                    return true;
-                }
-                return false;
-            }
-            case SurfaceSource.VuforiaAnchorOnTarget:
-            default:
-            {
-#if VUFORIA_PRESENT
-                // Buscar un AnchorBehaviour cercano al punto/target
-                Vuforia.AnchorBehaviour ab = (t ? t.GetComponentInParent<Vuforia.AnchorBehaviour>() : null);
-                if (!ab && t) ab = t.GetComponentInChildren<Vuforia.AnchorBehaviour>();
-                if (ab && ab.transform)
-                {
-                    planePoint = ab.transform.position;
-                    planeNormal = ab.transform.up;
-                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
-                    return true;
-                }
-                // Fallback: usar ObserverBehaviour (Ground Plane usa hit pose plana)
-                Vuforia.ObserverBehaviour ob = (t ? t.GetComponentInParent<Vuforia.ObserverBehaviour>() : null);
-                if (!ob && t) ob = t.GetComponentInChildren<Vuforia.ObserverBehaviour>();
-                if (ob && ob.transform)
-                {
-                    planePoint = ob.transform.position;
-                    planeNormal = ob.transform.up;
-                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
-                    return true;
-                }
-#endif
-                // Sin Vuforia o sin anchor: probar raycast como respaldo
-                Vector3 origin = t ? t.position : Vector3.zero;
-                RaycastHit hit;
-                if (Physics.Raycast(origin + Vector3.up * 0.01f, Vector3.down, out hit, Mathf.Max(0.01f, surfaceRaycastMaxDistance) + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore))
-                {
-                    planePoint = hit.point; planeNormal = hit.normal; return true;
-                }
-                planeNormal = AutoChooseUpFromTransform(t);
-                if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
-                return true;
-            }
-        }
-    }
-
-    Vector3 AutoChooseUpFromTransform(Transform t)
-    {
-        if (!t) return Vector3.up;
-        Vector3[] candidates = new[] { t.up, t.forward, t.right, -t.up, -t.forward, -t.right };
-        float bestDot = -1f; Vector3 best = t.up;
-        for (int i = 0; i < candidates.Length; i++)
-        {
-            Vector3 c = candidates[i]; if (c.sqrMagnitude < 1e-6f) continue;
-            float d = Mathf.Abs(Vector3.Dot(c.normalized, Vector3.up));
-            if (d > bestDot) { bestDot = d; best = c; }
-        }
-        return best.normalized;
     }
 }

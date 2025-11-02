@@ -1984,12 +1984,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoadFromTargetsSticky
   targetsRoot: {fileID: 0}
   pointChildName: _tgt_point
-  updateEveryFrame: 1
+  updateIfChange: 1
   samplesPerSegment: 64
   useRealPointsDirectly: 1
   detectionOrderManager: {fileID: 0}
   useFrozenPointsFromManager: 1
   regenerateOnOrderChanged: 1
+  preferStableWhenNotTracked: 1
   closeLoopWhenAtLeast3: 1
   connectMode: 0
   flattenToTargetsPlane: 1
@@ -2031,6 +2032,11 @@ MonoBehaviour:
   maxReacquireJump: 0.15
   updateLerp: 0.35
   minDeltaToUpdate: 0.003
+  tremorFilter: 1
+  tremorDeadzoneMeters: 0.01
+  tremorHoldFrames: 2
+  tremorMaxStepMeters: 0.02
+  tremorLerp: 0.25
   surfaceOffset: 0.002
   asphaltMaterial: {fileID: 0}
   enableLaneLines: 1
@@ -2067,6 +2073,7 @@ MonoBehaviour:
   drawEdgesGizmo: 1
   leftEdgeColor: {r: 0.9, g: 0.1, b: 0.1, a: 0.9}
   rightEdgeColor: {r: 0.1, g: 0.1, b: 0.9, a: 0.9}
+  minRebuildPosDeltaMeters: 0.05
   outerLaneEdgeMargin: 0.1
 --- !u!1 &1247265042
 GameObject:
@@ -2862,7 +2869,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
-  m_RenderShadows: 1
+  m_RenderShadows: 0
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
   m_CameraType: 0
@@ -2874,7 +2881,7 @@ MonoBehaviour:
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
   m_RenderPostProcessing: 0
-  m_Antialiasing: 0
+  m_Antialiasing: 2
   m_AntialiasingQuality: 2
   m_StopNaN: 0
   m_Dithering: 0
@@ -2959,8 +2966,8 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.05
-  far clip plane: 2000
+  near clip plane: 0.5
+  far clip plane: 50
   field of view: 60
   orthographic: 0
   orthographic size: 5
