@@ -3,15 +3,8 @@ using System.Collections;
 
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movimiento")]
-    // Obsoletos para traslación directa, se mantienen por compatibilidad de inspector
-    public float moveDistance = 3.5f;
-    public float moveDuration = 0.3f;
-
     [Header("Carriles")]
-    // Obsoleto: el conteo de carriles real lo define RoadFromTargetsSticky.laneCount
-    public int maxLane = 1;
-    private int currentLane = 0; // Índice discreto del carril usado por RoadLaneFollower
+    private int currentLane = 0; // Carril actual (0 = izquierda, centro depende de la carretera)
 
     [Header("Referencias")]
     public Animator animator;
@@ -21,186 +14,177 @@ public class PlayerController : MonoBehaviour
     public bool autoCenterOnStart = true;
 
     [Header("Animaciones")]
-    [Tooltip("Nombre del estado Idle en el Animator")] public string animIdle = "BikeRig|Idle";
-    [Tooltip("Nombre del estado de giro a la izquierda")] public string animLeft = "BikeRig|movIzquierda";
-    [Tooltip("Nombre del estado de giro a la derecha")] public string animRight = "BikeRig|movDerecha";
-    [Tooltip("Usar CrossFade en lugar de Play para transiciones suaves")] public bool useCrossFade = true;
-    [Tooltip("Duración de CrossFade")] public float crossFadeDuration = 0.08f;
-    [Tooltip("Volver a Idle automáticamente después del cambio de carril")] public bool returnToIdleAfterLaneChange = true;
+    public string animIdle = "BikeRig|Idle";
+    public string animLeft = "BikeRig|movIzquierda";
+    public string animRight = "BikeRig|movDerecha";
+    public bool useCrossFade = true;
+    public float crossFadeDuration = 0.08f;
+    public bool returnToIdleAfterLaneChange = true;
+
     [Header("Animator (Triggers opcionales)")]
-    [Tooltip("Si está activo, usará parámetros Trigger del Animator en lugar de nombres de estado")] public bool useAnimatorTriggers = false;
-    [Tooltip("Nombre del Trigger para animación de giro a la izquierda")] public string leftTriggerName = "TurnLeft";
-    [Tooltip("Nombre del Trigger para animación de giro a la derecha")] public string rightTriggerName = "TurnRight";
+    public bool useAnimatorTriggers = false;
+    public string leftTriggerName = "TurnLeft";
+    public string rightTriggerName = "TurnRight";
 
     [Header("Restricciones de control")]
-    [Tooltip("Si está activo, sólo permitirá cambiar de carril mientras se está acelerando")] public bool requireAcceleratingForLaneChange = false;
+    [Tooltip("Si está activo, sólo permitirá cambiar de carril mientras se está acelerando")]
+    public bool requireAcceleratingForLaneChange = false;
 
     // Estado
-    private bool isMoving = false; // cooldown de cambio de carril
-    private bool ready = false;
+    private bool isMoving = false; // evita spam de movimientos
+    private bool ready = false;    // espera a que la carretera cargue
 
     void Awake()
     {
+        // Configuración del Animator
         if (animator != null)
         {
             animator.applyRootMotion = false;
-            // Asegura que el Animator no pare por estar fuera de cámara ni cambie el orden de actualización
-            animator.updateMode = AnimatorUpdateMode.Normal; // anima en Update
-            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; // no se pausa al no estar visible
+            animator.updateMode = AnimatorUpdateMode.Normal;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
         }
+
+        // Asegura el componente laneFollower
         if (!laneFollower)
             laneFollower = GetComponent<RoadLaneFollower>();
     }
 
     IEnumerator Start()
     {
-        // Idle inicial
-        if (animator != null)
-        {
-            SafePlay(animIdle, 0f);
-            animator.Update(0f);
-        }
+        // Reproducir animación Idle inicial
+        SafePlay(animIdle);
 
-        // Espera a que el camino esté listo y centra al medio
-        if (laneFollower && laneFollower.road)
-        {
-            yield return null; // un frame para inicializar
-            float timeout = 2f;
-            while (!laneFollower.road.PathReady && timeout > 0f)
-            {
-                timeout -= Time.deltaTime;
-                yield return null;
-            }
-            if (autoCenterOnStart && laneFollower.road)
-            {
-                int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
-                currentLane = (lanes - 1) / 2;
-                laneFollower.laneIndex = currentLane;
-            }
-        }
-        else
-        {
-            yield return null;
-        }
+        // Esperar carretera lista
+        yield return StartCoroutine(WaitForRoadReady());
+
+        // Centrar en carril medio
+        CenterLaneOnStart();
 
         ready = true;
+
+        // Activar avance continuo
+        laneFollower?.AccelerateOn();
     }
 
-    // Botón IZQUIERDA
-    public void MoveLeft()
+    /// <summary>
+    /// Espera a que la carretera esté lista antes de permitir movimiento
+    /// </summary>
+    IEnumerator WaitForRoadReady()
     {
-        if (!ready || isMoving) return;
-        if (!laneFollower || !laneFollower.road) return;
-        if (requireAcceleratingForLaneChange && laneFollower && !laneFollower.IsAccelerating) return;
+        if (!laneFollower || !laneFollower.road) yield break;
 
-        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
-        int newLane = Mathf.Clamp(currentLane - 1, 0, lanes - 1);
-        if (newLane != currentLane)
+        float timeout = 2f;
+        while (!laneFollower.road.PathReady && timeout > 0f)
         {
-            currentLane = newLane;
-            laneFollower.laneIndex = currentLane;
-            PlayLaneAnim(animLeft);
-            float lockTime = laneFollower ? Mathf.Max(0.05f, laneFollower.laneChangeTime) : 0.2f;
-            StartCoroutine(LaneChangeCooldown(lockTime));
-            if (returnToIdleAfterLaneChange) StartCoroutine(ReturnToIdleAfter(lockTime));
-        }
-    }
-
-    // Botón DERECHA
-    public void MoveRight()
-    {
-        if (!ready || isMoving) return;
-        if (!laneFollower || !laneFollower.road) return;
-        if (requireAcceleratingForLaneChange && laneFollower && !laneFollower.IsAccelerating) return;
-
-        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
-        int newLane = Mathf.Clamp(currentLane + 1, 0, lanes - 1);
-        if (newLane != currentLane)
-        {
-            currentLane = newLane;
-            laneFollower.laneIndex = currentLane;
-            PlayLaneAnim(animRight);
-            float lockTime = laneFollower ? Mathf.Max(0.05f, laneFollower.laneChangeTime) : 0.2f;
-            StartCoroutine(LaneChangeCooldown(lockTime));
-            if (returnToIdleAfterLaneChange) StartCoroutine(ReturnToIdleAfter(lockTime));
-        }
-    }
-
-    // Botón ACELERAR (mantener pulsado)
-    public void MoveForward()
-    {
-        if (!ready) return;
-        if (laneFollower) laneFollower.AccelerateOn();
-    }
-
-    // UI hooks para hold explícito
-    public void AccelerateOn()
-    {
-        if (laneFollower) laneFollower.AccelerateOn();
-    }
-    public void AccelerateOff()
-    {
-        if (laneFollower) laneFollower.AccelerateOff();
-    }
-
-    private IEnumerator LaneChangeCooldown(float duration)
-    {
-        isMoving = true;
-        float t = 0f;
-        while (t < duration)
-        {
-            t += Time.deltaTime;
+            timeout -= Time.deltaTime;
             yield return null;
         }
+    }
+
+    /// <summary>
+    /// Centra al jugador en el carril medio si la opción está activada
+    /// </summary>
+    void CenterLaneOnStart()
+    {
+        if (!autoCenterOnStart || laneFollower?.road == null) return;
+
+        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
+        currentLane = (lanes - 1) / 2;
+        laneFollower.laneIndex = currentLane;
+    }
+
+    /// <summary>
+    /// Invocado por UI o input para mover izquierda
+    /// </summary>
+    public void MoveLeft() => TryChangeLane(-1);
+
+    /// <summary>
+    /// Invocado por UI o input para mover derecha
+    /// </summary>
+    public void MoveRight() => TryChangeLane(+1);
+
+    /// <summary>
+    /// Comprueba condiciones y realiza cambio de carril
+    /// </summary>
+    void TryChangeLane(int direction)
+    {
+        if (!ready || isMoving || laneFollower?.road == null) return;
+
+        if (requireAcceleratingForLaneChange && !laneFollower.IsAccelerating)
+            return;
+
+        int lanes = Mathf.Max(1, laneFollower.road.LaneCountPublic);
+        int newLane = Mathf.Clamp(currentLane + direction, 0, lanes - 1);
+        if (newLane == currentLane) return;
+
+        // Aplicar nuevo carril
+        currentLane = newLane;
+        laneFollower.laneIndex = currentLane;
+
+        // Animación correcta según dirección
+        PlayLaneAnim(direction < 0 ? animLeft : animRight);
+
+        // Bloquear control mientras cambia de carril
+        float lockTime = Mathf.Max(0.05f, laneFollower.laneChangeTime);
+        StartCoroutine(LaneChangeCooldown(lockTime));
+
+        if (returnToIdleAfterLaneChange)
+            StartCoroutine(ReturnToIdleAfter(lockTime));
+    }
+
+    IEnumerator LaneChangeCooldown(float duration)
+    {
+        isMoving = true;
+        yield return new WaitForSeconds(duration);
         isMoving = false;
     }
 
-    private IEnumerator ReturnToIdleAfter(float delay)
+    IEnumerator ReturnToIdleAfter(float delay)
     {
-        yield return new WaitForSeconds(Mathf.Max(0f, delay));
-        SafeCrossFade(animIdle, crossFadeDuration);
+        yield return new WaitForSeconds(delay);
+        SafeCrossFade(animIdle);
     }
 
+    // --- Animación segura ---
     void PlayLaneAnim(string stateName)
     {
         if (!animator) return;
+
         if (useAnimatorTriggers)
         {
-            string trig = null;
-            if (!string.IsNullOrEmpty(animLeft) && stateName == animLeft) trig = leftTriggerName;
-            else if (!string.IsNullOrEmpty(animRight) && stateName == animRight) trig = rightTriggerName;
-
-            if (!string.IsNullOrEmpty(trig))
-            {
-                // Evita encadenar triggers
-                if (!string.IsNullOrEmpty(leftTriggerName)) animator.ResetTrigger(leftTriggerName);
-                if (!string.IsNullOrEmpty(rightTriggerName)) animator.ResetTrigger(rightTriggerName);
-                animator.SetTrigger(trig);
-            }
-            else
-            {
-                // Fallback a estados
-                if (useCrossFade) SafeCrossFade(stateName, crossFadeDuration);
-                else SafePlay(stateName, 0f);
-            }
+            TriggerAnim(stateName);
         }
         else
         {
-            if (useCrossFade) SafeCrossFade(stateName, crossFadeDuration);
-            else SafePlay(stateName, 0f);
+            if (useCrossFade) SafeCrossFade(stateName);
+            else SafePlay(stateName);
         }
+
         animator.Update(0f);
     }
 
-    void SafePlay(string stateName, float normalizedTime)
+    void TriggerAnim(string stateName)
     {
-        if (!animator || string.IsNullOrEmpty(stateName)) return;
-        animator.Play(stateName, 0, normalizedTime);
+        animator.ResetTrigger(leftTriggerName);
+        animator.ResetTrigger(rightTriggerName);
+
+        if (stateName == animLeft) animator.SetTrigger(leftTriggerName);
+        else if (stateName == animRight) animator.SetTrigger(rightTriggerName);
     }
 
-    void SafeCrossFade(string stateName, float duration)
+    void SafePlay(string stateName)
     {
-        if (!animator || string.IsNullOrEmpty(stateName)) return;
-        animator.CrossFadeInFixedTime(stateName, Mathf.Max(0f, duration));
+        if (!string.IsNullOrEmpty(stateName))
+            animator.Play(stateName, 0, 0f);
     }
+
+    void SafeCrossFade(string stateName)
+    {
+        if (!string.IsNullOrEmpty(stateName))
+            animator.CrossFadeInFixedTime(stateName, crossFadeDuration);
+    }
+
+    // Métodos públicos para UI
+    public void AccelerateOn() => laneFollower?.AccelerateOn();
+    public void AccelerateOff() => laneFollower?.AccelerateOff();
 }
