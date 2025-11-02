@@ -30,13 +30,18 @@ public class PlayerController : MonoBehaviour
     [Tooltip("Si está activo, sólo permitirá cambiar de carril mientras se está acelerando")]
     public bool requireAcceleratingForLaneChange = false;
 
+    [Header("Velocidad por vuelta")]
+    [Tooltip("Cuánto se incrementa la velocidad por cada vuelta completada")]
+    public float speedIncrementPerLap = 0.1f;
+
     // Estado
     private bool isMoving = false; // evita spam de movimientos
     private bool ready = false;    // espera a que la carretera cargue
+    private float lastProgress = 0f;
+    private int lapCount = 0;
 
     void Awake()
     {
-        // Configuración del Animator
         if (animator != null)
         {
             animator.applyRootMotion = false;
@@ -44,31 +49,19 @@ public class PlayerController : MonoBehaviour
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
         }
 
-        // Asegura el componente laneFollower
         if (!laneFollower)
             laneFollower = GetComponent<RoadLaneFollower>();
     }
 
     IEnumerator Start()
     {
-        // Reproducir animación Idle inicial
         SafePlay(animIdle);
-
-        // Esperar carretera lista
         yield return StartCoroutine(WaitForRoadReady());
-
-        // Centrar en carril medio
         CenterLaneOnStart();
-
         ready = true;
-
-        // Activar avance continuo
         laneFollower?.AccelerateOn();
     }
 
-    /// <summary>
-    /// Espera a que la carretera esté lista antes de permitir movimiento
-    /// </summary>
     IEnumerator WaitForRoadReady()
     {
         if (!laneFollower || !laneFollower.road) yield break;
@@ -81,9 +74,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Centra al jugador en el carril medio si la opción está activada
-    /// </summary>
     void CenterLaneOnStart()
     {
         if (!autoCenterOnStart || laneFollower?.road == null) return;
@@ -93,19 +83,24 @@ public class PlayerController : MonoBehaviour
         laneFollower.laneIndex = currentLane;
     }
 
-    /// <summary>
-    /// Invocado por UI o input para mover izquierda
-    /// </summary>
-    public void MoveLeft() => TryChangeLane(-1);
+    void Update()
+    {
+        if (!laneFollower || laneFollower.road == null) return;
 
-    /// <summary>
-    /// Invocado por UI o input para mover derecha
-    /// </summary>
+        // Detecta vuelta completada
+        float progress = laneFollower.CurrentS / laneFollower.road.PathLength;
+        if (lastProgress > 0.9f && progress < 0.1f)
+        {
+            lapCount++;
+            laneFollower.speed += speedIncrementPerLap;
+            Debug.Log($"Vuelta completada: {lapCount} | Nueva velocidad: {laneFollower.speed}");
+        }
+        lastProgress = progress;
+    }
+
+    public void MoveLeft() => TryChangeLane(-1);
     public void MoveRight() => TryChangeLane(+1);
 
-    /// <summary>
-    /// Comprueba condiciones y realiza cambio de carril
-    /// </summary>
     void TryChangeLane(int direction)
     {
         if (!ready || isMoving || laneFollower?.road == null) return;
@@ -117,14 +112,11 @@ public class PlayerController : MonoBehaviour
         int newLane = Mathf.Clamp(currentLane + direction, 0, lanes - 1);
         if (newLane == currentLane) return;
 
-        // Aplicar nuevo carril
         currentLane = newLane;
         laneFollower.laneIndex = currentLane;
 
-        // Animación correcta según dirección
         PlayLaneAnim(direction < 0 ? animLeft : animRight);
 
-        // Bloquear control mientras cambia de carril
         float lockTime = Mathf.Max(0.05f, laneFollower.laneChangeTime);
         StartCoroutine(LaneChangeCooldown(lockTime));
 
@@ -145,15 +137,12 @@ public class PlayerController : MonoBehaviour
         SafeCrossFade(animIdle);
     }
 
-    // --- Animación segura ---
     void PlayLaneAnim(string stateName)
     {
         if (!animator) return;
 
         if (useAnimatorTriggers)
-        {
             TriggerAnim(stateName);
-        }
         else
         {
             if (useCrossFade) SafeCrossFade(stateName);
@@ -184,7 +173,6 @@ public class PlayerController : MonoBehaviour
             animator.CrossFadeInFixedTime(stateName, crossFadeDuration);
     }
 
-    // Métodos públicos para UI
     public void AccelerateOn() => laneFollower?.AccelerateOn();
     public void AccelerateOff() => laneFollower?.AccelerateOff();
 }

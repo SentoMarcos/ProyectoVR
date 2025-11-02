@@ -217,4 +217,6 @@ public class RoadLaneFollower : MonoBehaviour
     public void AccelerateOn() => accelerating = true;
     public void AccelerateOff() => accelerating = false;
     public bool IsAccelerating => accelerating;
+    public float CurrentS => currentS;
+
 }
