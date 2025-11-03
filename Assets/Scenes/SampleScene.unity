@@ -1769,7 +1769,7 @@ PrefabInstance:
     - target: {fileID: 1465476741719960426, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       propertyPath: road
       value: 
-      objectReference: {fileID: 1021122967}
+      objectReference: {fileID: 0}
     - target: {fileID: 1465476741719960426, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       propertyPath: debugLogs
       value: 1
@@ -1981,8 +1981,8 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2c17015e013fc7842b793ad788a91b3d, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RoadFromTargetsSticky
-  targetsRoot: {fileID: 0}
+  m_EditorClassIdentifier: Assembly-CSharp::RoadFromTargets
+  targetsRoot: {fileID: 442481194}
   pointChildName: _tgt_point
   updateIfChange: 1
   samplesPerSegment: 64
@@ -1990,7 +1990,6 @@ MonoBehaviour:
   detectionOrderManager: {fileID: 0}
   useFrozenPointsFromManager: 1
   regenerateOnOrderChanged: 1
-  preferStableWhenNotTracked: 1
   closeLoopWhenAtLeast3: 1
   connectMode: 0
   flattenToTargetsPlane: 1
@@ -2011,8 +2010,8 @@ MonoBehaviour:
   laneWidthMeters: 3
   laneWidthFraction: 0.08
   maxWidthVsMinSeg: 0.5
-  minTotalWidthMeters: 0.9
-  maxTotalWidthMeters: 0.87
+  minTotalWidthMeters: 0.662
+  maxTotalWidthMeters: 1.692
   adaptiveWidthInCurves: 1
   minWidthScaleAtSharpTurn: 0.5
   angleForMinWidth: 50
@@ -2037,23 +2036,25 @@ MonoBehaviour:
   tremorHoldFrames: 2
   tremorMaxStepMeters: 0.02
   tremorLerp: 0.25
+  freezeProxyAfterFirstStable: 0
+  freezeRoadAfterPlaneLocked: 0
   surfaceOffset: 0.002
-  asphaltMaterial: {fileID: 0}
+  asphaltMaterial: {fileID: 2100000, guid: fbc014b93e7750440aaf8bbcefb17ee6, type: 2}
   enableLaneLines: 1
-  laneLineMaterial: {fileID: 2100000, guid: fbc014b93e7750440aaf8bbcefb17ee6, type: 2}
+  laneLineMaterial: {fileID: 0}
   laneLineTexture: {fileID: 0}
   laneLineColor: {r: 1, g: 1, b: 1, a: 1}
   lineUvTilesPerMeter: 0.5
-  centerLineWidthMeters: 0.02
-  edgeLineWidthMeters: 0.02
+  centerLineWidthMeters: 0.06
+  edgeLineWidthMeters: 0.08
   drawEdgeLines: 1
   drawCenterLines: 1
   centerLinesDashed: 1
-  dashLengthMeters: 0.168
-  gapLengthMeters: 0.088
+  dashLengthMeters: 0.35
+  gapLengthMeters: 0.35
   dashOffsetMeters: 0
   linesLiftOffsetMeters: 0.0015
-  addUnderShadow: 0
+  addUnderShadow: 1
   shadowExtraWidthMeters: 0.02
   shadowUnderOffset: -0.0015
   shadowColor: {r: 0, g: 0, b: 0, a: 0.35}
