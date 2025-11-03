@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /**
  * @file RoadFromTargets.cs
@@ -30,8 +31,9 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public string pointChildName = "_tgt_point";  // Hijo dentro de cada TargetX
 
     [Header("Actualización")]
-    /// <summary>Si es true, se regenera cada frame; si es false, sólo en Start() o cuando lo invoques manualmente.</summary>
-    public bool updateEveryFrame = true;
+    [FormerlySerializedAs("updateEveryFrame")]
+    [Tooltip("Actualiza automáticamente solo si detecta cambios (posiciones o parámetros)")]
+    public bool updateIfChange = true;
     /// <summary>Número de muestras por tramo Catmull-Rom. Controla densidad de vértices.</summary>
     [Range(4, 64)] public int samplesPerSegment = 24;
     [Tooltip("Usar directamente los _tgt_point de 'Targets' sin lógica de estabilidad/visibilidad.")]
@@ -44,6 +46,19 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public bool regenerateOnOrderChanged = true;
     [Tooltip("Si hay ≥3 puntos, conecta el último con el primero (circuito cerrado). El nuevo detectado pasa a ser el último.")]
     public bool closeLoopWhenAtLeast3 = true;
+
+    public enum ConnectMode
+    {
+        // Comportamiento actual: conecta todos los puntos en orden (y opcionalmente cierra el bucle)
+        Sequential,
+        // Conecta solo el primero detectado con el último (2 puntos)
+        FirstToLastOnly,
+        // Conecta únicamente los dos últimos detectados (cuando llega uno nuevo, pasa a unirse con el anterior último)
+        LastTwoOnly,
+    }
+    [Header("Modo de conexión entre puntos")]
+    [Tooltip("Cómo se conectan los puntos: Sequential (todos), FirstToLastOnly (solo primero-último), LastTwoOnly (solo los dos últimos).")]
+    public ConnectMode connectMode = ConnectMode.LastTwoOnly;
 
     [Header("Plano y UVs")]
     /// <summary>Proyecta la línea central sobre un plano estimado para evitar desniveles no deseados.</summary>
@@ -71,6 +86,19 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public bool snapNormalToWorldUp = true;
     /// <summary>Ángulo máximo para aplicar el snap a vertical (en grados).</summary>
     [Range(0f, 60f)] public float snapUpMaxAngle = 30f;
+
+    [Header("Ground Plane / Superficies (multi-altura)")]
+    [Tooltip("Habilita que cada target se 'ancle' a su propia superficie (Vuforia Anchor o Raycast) y que la carretera respete diferentes alturas.")]
+    public bool enablePerPointSurfaces = true;
+    public enum SurfaceSource { VuforiaAnchorOnTarget, PhysicsRaycastDown, UseTargetOrientation, None }
+    [Tooltip("Fuente de superficie por punto: Vuforia Anchor (si hay), Raycast hacia abajo, orientación del punto o ninguna.")]
+    public SurfaceSource perPointSurfaceSource = SurfaceSource.VuforiaAnchorOnTarget;
+    [Tooltip("Capa(s) para raycast de superficie (cuando se usa PhysicsRaycastDown).")]
+    public LayerMask surfaceRaycastLayers = ~0;
+    [Tooltip("Distancia máxima del raycast vertical (m).")]
+    [Range(0.1f, 10f)] public float surfaceRaycastMaxDistance = 3f;
+    [Tooltip("Cuando está activo, ajusta (proyecta) cada punto de control a su plano detectado antes de interpolar.")]
+    public bool snapControlPointsToSurface = true;
 
     [Header("Altura constante (opcional)")]
     [Tooltip("Fuerza que todos los puntos de entrada estén a la misma altura Y mundial (carretera totalmente plana).")]
@@ -145,6 +173,18 @@ public class RoadFromTargetsSticky : MonoBehaviour
     /// <summary>Desplazamiento mínimo para aplicar actualización (m).</summary>
     public float minDeltaToUpdate = 0.003f;     // umbral de movimiento (m)
 
+    [Header("Filtro de temblor de mano")]
+    [Tooltip("Activa un filtro extra para ignorar micro-movimientos de la mano y aplicar la actualización más despacio")]
+    public bool tremorFilter = true;
+    [Tooltip("Deadzone extra sumada a minDeltaToUpdate (m)")]
+    [Range(0f, 0.05f)] public float tremorDeadzoneMeters = 0.01f;
+    [Tooltip("Número de frames consecutivos por encima del umbral antes de aplicar actualización")]
+    [Range(0, 10)] public int tremorHoldFrames = 2;
+    [Tooltip("Límite de desplazamiento aplicado por frame cuando se autoriza una actualización (m)")]
+    [Range(0f, 0.1f)] public float tremorMaxStepMeters = 0.02f;
+    [Tooltip("Lerp adicional para tremor (0=fuerte suavizado, 1=sin suavizado extra)")]
+    [Range(0f, 1f)] public float tremorLerp = 0.25f;
+
     [Header("Visibilidad")]
     [Tooltip("Levanta la carretera del plano para evitar z-fighting (metros).")]
     /// <summary>Offset en metros para elevar la malla y evitar z-fighting con el feed de cámara.</summary>
@@ -152,6 +192,47 @@ public class RoadFromTargetsSticky : MonoBehaviour
     [Tooltip("Si no hay material, se crea uno oscuro y doble cara.")]
     /// <summary>Material utilizado para renderizar la carretera (se crea uno Unlit si no hay).</summary>
     public Material asphaltMaterial;
+    [Header("Marcas de carril (pintura)")]
+    [Tooltip("Dibuja líneas de carril (texturas) sobre la carretera.")]
+    public bool enableLaneLines = true;
+    [Tooltip("Material para las líneas (si está vacío, se crea uno Unlit)")]
+    public Material laneLineMaterial;
+    [Tooltip("Textura opcional para las líneas (por ejemplo, patrón discontinuo). Si el material tiene _BaseMap/_MainTex, se asigna aquí.")]
+    public Texture2D laneLineTexture;
+    [Tooltip("Color/tinte para las líneas")]
+    public Color laneLineColor = Color.white;
+    [Tooltip("Repeticiones de UV por metro a lo largo de la carretera (para texturas de líneas)")]
+    public float lineUvTilesPerMeter = 0.5f;
+    [Tooltip("Grosor de líneas internas (m)")]
+    [Range(0.005f, 0.2f)] public float centerLineWidthMeters = 0.06f;
+    [Tooltip("Grosor de líneas de borde (m)")]
+    [Range(0.005f, 0.2f)] public float edgeLineWidthMeters = 0.08f;
+    [Tooltip("Dibujar líneas de borde (extremos)")]
+    public bool drawEdgeLines = true;
+    [Tooltip("Dibujar líneas internas (separadoras)")]
+    public bool drawCenterLines = true;
+    [Tooltip("Las líneas internas (separadoras) serán discontinuas")]
+    public bool centerLinesDashed = true;
+    [Tooltip("Longitud de cada trazo de línea discontinua (m)")]
+    [Range(0.02f, 2f)] public float dashLengthMeters = 0.35f;
+    [Tooltip("Longitud del hueco entre trazos (m)")]
+    [Range(0.02f, 2f)] public float gapLengthMeters = 0.35f;
+    [Tooltip("Desfase inicial del patrón (m)")]
+    public float dashOffsetMeters = 0f;
+    [Tooltip("Elevación de las líneas sobre el asfalto para evitar z-fighting (m)")]
+    [Range(0f, 0.01f)] public float linesLiftOffsetMeters = 0.0015f;
+
+    [Header("Sombra bajo la carretera")]
+    [Tooltip("Dibuja una malla extra, un poco más ancha y ligeramente por debajo, para simular sombra.")]
+    public bool addUnderShadow = true;
+    [Tooltip("Ancho extra por lado (metros) para la sombra.")]
+    [Range(0f, 0.5f)] public float shadowExtraWidthMeters = 0.02f;
+    [Tooltip("Offset adicional hacia abajo respecto a surfaceOffset (metros). Usa negativo para que quede un poco por debajo.")]
+    [Range(-0.01f, 0.01f)] public float shadowUnderOffset = -0.0015f;
+    [Tooltip("Color de la sombra (usa alpha bajo, p.ej. 0.25-0.45).")]
+    public Color shadowColor = new Color(0f, 0f, 0f, 0.35f);
+    [Tooltip("Material para la sombra. Si está vacío, se crea uno Unlit transparente automáticamente.")]
+    public Material shadowMaterial;
 
     [Header("Vuforia (requisito de tracking)")]
     [Tooltip("Si está activo, SOLO se conectan puntos que estén detectados por Vuforia (ignora activeInHierarchy).")]
@@ -192,6 +273,14 @@ public class RoadFromTargetsSticky : MonoBehaviour
     Mesh mesh;
     /// <summary>Renderer para poder ocultar/mostrar la malla fácilmente.</summary>
     MeshRenderer mr;
+    // Líneas
+    MeshFilter linesMf;
+    MeshRenderer linesMr;
+    Mesh linesMesh;
+    // Sombra
+    MeshFilter shadowMf;
+    MeshRenderer shadowMr;
+    Mesh shadowMesh;
     /// <summary>Últimos puntos de control usados (tras aplicar cierre si procede) para dibujar gizmos.</summary>
     readonly List<Transform> lastUsedControlPoints = new();
 
@@ -201,6 +290,13 @@ public class RoadFromTargetsSticky : MonoBehaviour
     Vector3 lastUpVec = Vector3.up;
     bool lastClosed = false;
     float lastTotalWidth = 0f;
+    int lastHash = 0; // deprecated (kept for compatibility)
+    // Rebuild gating
+    [Header("Actualización condicional")]
+    [Tooltip("No regenerar la carretera salvo que los puntos se muevan más de este umbral (m)")]
+    [Range(0f, 0.2f)] public float minRebuildPosDeltaMeters = 0.05f;
+    List<Vector3> lastCtrlPositionsCache = new();
+    int lastParamHash = 0;
 
     // Accesores públicos mínimos para seguidores externos
     public bool PathReady => lastCenterline != null && lastCenterline.Count >= 2;
@@ -209,6 +305,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
     public bool IsClosedPath => lastClosed;
     public int LaneCountPublic => laneCount;
     public float TotalWidthPublic => lastTotalWidth;
+    [Tooltip("Margen de seguridad en extremos: reduce el alcance de los carriles exteriores (m).")]
+    [Range(0f, 0.5f)] public float outerLaneEdgeMargin = 0.1f;
+
+    /// <summary>
+    /// Mapea un índice de carril 0..(laneCount-1) a un valor t en [-0.5,0.5] respetando un margen en bordes.
+    /// </summary>
+    public float LaneIndexToTRel(int laneIndex)
+    {
+        int lanes = Mathf.Max(1, laneCount);
+        laneIndex = Mathf.Clamp(laneIndex, 0, lanes - 1);
+        if (lanes == 1) return 0f;
+        // margen relativo en [-0.5,0.5]
+        float half = Mathf.Max(1e-6f, lastTotalWidth * 0.5f);
+        float relMargin = Mathf.Clamp01(outerLaneEdgeMargin / (half * 2f)); // convertir metros a fracción de [-0.5,0.5]
+        float tMin = -0.5f + relMargin;
+        float tMax =  0.5f - relMargin;
+        return Mathf.Lerp(tMin, tMax, laneIndex / (float)(lanes - 1));
+    }
 
     /// <summary>
     /// Muestra posición y tangente a lo largo del camino por distancia acumulada (m).
@@ -263,6 +377,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         public Quaternion stableRot;
         public int orderIndex = int.MaxValue;   // índice en jerarquía
         public string name;
+        // Filtro de temblor
+        public int tremorFramesAccum = 0;
     }
 
     readonly List<ProxyState> proxies = new();
@@ -299,6 +415,74 @@ public class RoadFromTargetsSticky : MonoBehaviour
             mr.sharedMaterial = asphaltMaterial;
         }
 
+        // Hijo para líneas de carril
+        var linesTr = transform.Find("RoadLines");
+        if (!linesTr)
+        {
+            var go = new GameObject("RoadLines");
+            go.transform.SetParent(transform, false);
+            linesTr = go.transform;
+        }
+        linesMf = linesTr.GetComponent<MeshFilter>();
+        if (!linesMf) linesMf = linesTr.gameObject.AddComponent<MeshFilter>();
+        linesMr = linesTr.GetComponent<MeshRenderer>();
+        if (!linesMr) linesMr = linesTr.gameObject.AddComponent<MeshRenderer>();
+        if (linesMesh == null) linesMesh = new Mesh { name = "RoadLinesMesh" };
+        linesMf.sharedMesh = linesMesh;
+        if (linesMr != null && linesMr.sharedMaterial == null)
+        {
+            if (!laneLineMaterial)
+            {
+                Shader shL = Shader.Find("Universal Render Pipeline/Unlit");
+                if (!shL) shL = Shader.Find("Unlit/Color");
+                laneLineMaterial = new Material(shL);
+            }
+            if (laneLineMaterial.HasProperty("_BaseColor")) laneLineMaterial.SetColor("_BaseColor", laneLineColor);
+            if (laneLineMaterial.HasProperty("_Color"))     laneLineMaterial.SetColor("_Color",     laneLineColor);
+            if (laneLineTexture)
+            {
+                if (laneLineMaterial.HasProperty("_BaseMap")) laneLineMaterial.SetTexture("_BaseMap", laneLineTexture);
+                if (laneLineMaterial.HasProperty("_MainTex")) laneLineMaterial.SetTexture("_MainTex", laneLineTexture);
+            }
+            linesMr.sharedMaterial = laneLineMaterial;
+        }
+
+        // Crear hijo para la sombra si procede
+        var shadowTr = transform.Find("RoadShadow");
+        if (!shadowTr)
+        {
+            var go = new GameObject("RoadShadow");
+            go.transform.SetParent(transform, false);
+            shadowTr = go.transform;
+        }
+        shadowMf = shadowTr.GetComponent<MeshFilter>();
+        if (!shadowMf) shadowMf = shadowTr.gameObject.AddComponent<MeshFilter>();
+        shadowMr = shadowTr.GetComponent<MeshRenderer>();
+        if (!shadowMr) shadowMr = shadowTr.gameObject.AddComponent<MeshRenderer>();
+        if (shadowMesh == null) shadowMesh = new Mesh { name = "RoadShadowMesh" };
+        shadowMf.sharedMesh = shadowMesh;
+
+        // Material sombra por defecto si no hay
+        if (shadowMr != null && (shadowMr.sharedMaterial == null))
+        {
+            if (!shadowMaterial)
+            {
+                Shader shS = Shader.Find("Universal Render Pipeline/Unlit");
+                if (!shS) shS = Shader.Find("Unlit/Color");
+                shadowMaterial = new Material(shS);
+                // Intenta configurar transparencia básica
+                if (shadowMaterial.HasProperty("_BaseColor")) shadowMaterial.SetColor("_BaseColor", shadowColor);
+                if (shadowMaterial.HasProperty("_Color"))     shadowMaterial.SetColor("_Color",     shadowColor);
+                // Ajustes comunes para transparentes
+                shadowMaterial.SetInt("_Surface", 1); // Transparent en URP (si existe)
+                shadowMaterial.SetInt("_ZWrite", 0);
+                shadowMaterial.SetInt("_Cull", 0);
+                shadowMaterial.SetInt("_CullMode", 0);
+                shadowMaterial.renderQueue = 2990; // antes que otros transparentes comunes
+            }
+            shadowMr.sharedMaterial = shadowMaterial;
+        }
+
         if (!targetsRoot)
         {
             var go = GameObject.Find("Targets");
@@ -333,8 +517,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         if (detectionOrderManager != null)
             detectionOrderManager.OnOrderChanged -= Tick;
     }
-    /// <summary>Si <c>updateEveryFrame</c> es true, regenera cada frame.</summary>
-    void Update() { if (updateEveryFrame) Tick(); }
+    /// <summary>Si <c>updateIfChange</c> es true, comprueba cambios cada frame y regenera solo si cambió.</summary>
+    void Update() { if (updateIfChange) Tick(); }
 
     // -------------------- Bucle principal --------------------
     /**
@@ -359,7 +543,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 var frozen = detectionOrderManager.GetFrozenPoints();
                 if (frozen != null && frozen.Count >= 2)
                 {
-                    pts = MaybeCloseLoop(frozen);
+                    pts = ApplyConnectMode(frozen);
                     RenderOrCache(pts);
                     return;
                 }
@@ -367,7 +551,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             var ordered = detectionOrderManager.GetOrderedPoints();
             if (ordered != null && ordered.Count >= 2)
             {
-                pts = MaybeCloseLoop(ordered);
+                pts = ApplyConnectMode(ordered);
                 RenderOrCache(pts);
                 return;
             }
@@ -399,8 +583,93 @@ public class RoadFromTargetsSticky : MonoBehaviour
             return; // mantiene la malla previa para evitar parpadeo
         }
 
-        var finalPts = MaybeCloseLoop(pts);
+        var finalPts = ApplyConnectMode(pts);
+        // Determinar si hay CAMBIO GRANDE en puntos
+        bool bigChange = IsBigChange(finalPts, lastCtrlPositionsCache, minRebuildPosDeltaMeters);
+        // Hash sólo de parámetros (no posiciones) para detectar cambios de configuración
+        int paramHash = ComputeParamHash();
+        bool paramChanged = (paramHash != lastParamHash);
+        if (!paramChanged && !bigChange)
+        {
+            // Sólo actualiza renderers on/off y cache de puntos para gizmos
+            lastUsedControlPoints.Clear();
+            if (finalPts != null) lastUsedControlPoints.AddRange(finalPts);
+            if (mr) mr.enabled = !hideRoadMesh;
+            if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
+            if (linesMr) linesMr.enabled = enableLaneLines && !hideRoadMesh;
+            return;
+        }
         RenderOrCache(finalPts);
+        // Snapshot para siguiente comparación
+        lastCtrlPositionsCache.Clear();
+        if (finalPts != null)
+        {
+            for (int i = 0; i < finalPts.Count; i++)
+            {
+                var t = finalPts[i]; if (t) lastCtrlPositionsCache.Add(t.position);
+            }
+        }
+        lastParamHash = paramHash;
+    }
+
+    int ComputeParamHash()
+    {
+        int h = 17;
+        unchecked
+        {
+            h = h * 31 + samplesPerSegment;
+            h = h * 31 + (flattenToTargetsPlane ? 1 : 0);
+            h = h * 31 + (forceTargetsSameHeight ? 1 : 0);
+            h = h * 31 + heightReferenceMode.GetHashCode();
+            h = h * 31 + laneCount;
+            h = h * 31 + widthMode.GetHashCode();
+            h = h * 31 + laneWidthMeters.GetHashCode();
+            h = h * 31 + laneWidthFraction.GetHashCode();
+            h = h * 31 + maxWidthVsMinSeg.GetHashCode();
+            h = h * 31 + minTotalWidthMeters.GetHashCode();
+            h = h * 31 + maxTotalWidthMeters.GetHashCode();
+            h = h * 31 + (adaptiveWidthInCurves ? 1 : 0);
+            h = h * 31 + minWidthScaleAtSharpTurn.GetHashCode();
+            h = h * 31 + angleForMinWidth.GetHashCode();
+            h = h * 31 + angleStartNarrow.GetHashCode();
+            h = h * 31 + (useRoundedJoins ? 1 : 0);
+            h = h * 31 + roundSegmentsPer90;
+            h = h * 31 + (rotateSeamToLowestCurvature ? 1 : 0);
+            h = h * 31 + surfaceOffset.GetHashCode();
+            // Líneas/sombra
+            h = h * 31 + (enableLaneLines ? 1 : 0);
+            h = h * 31 + centerLineWidthMeters.GetHashCode();
+            h = h * 31 + edgeLineWidthMeters.GetHashCode();
+            h = h * 31 + lineUvTilesPerMeter.GetHashCode();
+            h = h * 31 + (centerLinesDashed ? 1 : 0);
+            h = h * 31 + dashLengthMeters.GetHashCode();
+            h = h * 31 + gapLengthMeters.GetHashCode();
+            h = h * 31 + dashOffsetMeters.GetHashCode();
+            h = h * 31 + linesLiftOffsetMeters.GetHashCode();
+            h = h * 31 + (addUnderShadow ? 1 : 0);
+            h = h * 31 + shadowExtraWidthMeters.GetHashCode();
+            h = h * 31 + shadowUnderOffset.GetHashCode();
+            h = h * 31 + shadowColor.GetHashCode();
+            h = h * 31 + outerLaneEdgeMargin.GetHashCode();
+        }
+        return h;
+    }
+
+    static bool IsBigChange(List<Transform> a, List<Vector3> last, float threshold)
+    {
+        if (a == null || a.Count == 0) return false;
+        if (last == null || last.Count == 0) return true;
+        if (a.Count != last.Count) return true;
+        float th = Mathf.Max(0f, threshold);
+        float max = 0f;
+        for (int i = 0; i < a.Count; i++)
+        {
+            var t = a[i]; if (!t) continue;
+            float d = Vector3.Distance(t.position, last[i]);
+            if (d > max) max = d;
+            if (max >= th) return true;
+        }
+        return false;
     }
 
     // Habilita/deshabilita render según 'hideRoadMesh', y en cualquier caso cachea los puntos para gizmos
@@ -412,14 +681,41 @@ public class RoadFromTargetsSticky : MonoBehaviour
         if (hideRoadMesh)
         {
             if (mr) mr.enabled = false;
+            if (shadowMr) shadowMr.enabled = false;
             return; // no generamos malla, sólo cache para gizmos
         }
         if (mr) mr.enabled = true;
+            if (linesMr) linesMr.enabled = enableLaneLines;
+        if (shadowMr) shadowMr.enabled = addUnderShadow;
         GenerateRoad(controlPoints);
     }
 
+    // Aplica el modo de conexión pedido desde el inspector
+    List<Transform> ApplyConnectMode(List<Transform> src)
+    {
+        if (src == null || src.Count == 0) return src;
+        switch (connectMode)
+        {
+            case ConnectMode.FirstToLastOnly:
+                if (src.Count >= 2)
+                {
+                    return new List<Transform> { src[0], src[^1] };
+                }
+                return new List<Transform>(src);
+            case ConnectMode.LastTwoOnly:
+                if (src.Count >= 2)
+                {
+                    return new List<Transform> { src[^2], src[^1] };
+                }
+                return new List<Transform>(src);
+            case ConnectMode.Sequential:
+            default:
+                return MaybeCloseLoopSequential(src);
+        }
+    }
+
     // Si hay ≥3 puntos y el toggle está activo, devolvemos una copia con el primero repetido al final.
-    List<Transform> MaybeCloseLoop(List<Transform> src)
+    List<Transform> MaybeCloseLoopSequential(List<Transform> src)
     {
         if (!closeLoopWhenAtLeast3 || src == null || src.Count < 3) return src;
         var list = new List<Transform>(src.Count + 1);
@@ -572,11 +868,38 @@ public class RoadFromTargetsSticky : MonoBehaviour
                     {
                         float delta = (candPos - st.stablePos).magnitude;
                         bool firstUpdate = st.proxyPoint.position == Vector3.zero; // Heurística para la primera actualización
-                        if (delta >= minDeltaToUpdate || firstUpdate)
+                        float thr = Mathf.Max(0f, minDeltaToUpdate + (tremorFilter ? tremorDeadzoneMeters : 0f));
+                        if ((delta >= thr) || firstUpdate)
                         {
-                            st.stablePos = Vector3.Lerp(st.stablePos, candPos, updateLerp);
-                            st.stableRot = Quaternion.Slerp(st.stableRot, candRot, updateLerp);
-                            st.proxyPoint.SetPositionAndRotation(st.stablePos, st.stableRot);
+                            bool allowNow = true;
+                            if (tremorFilter && !firstUpdate)
+                            {
+                                st.tremorFramesAccum++;
+                                allowNow = (st.tremorFramesAccum >= Mathf.Max(0, tremorHoldFrames));
+                            }
+                            if (allowNow)
+                            {
+                                st.tremorFramesAccum = 0;
+                                // Lerp combinado (updateLerp base y tremorLerp extra)
+                                float a = Mathf.Clamp01(updateLerp);
+                                float b = tremorFilter ? Mathf.Clamp01(tremorLerp) : 1f;
+                                float w = Mathf.Clamp01(a * b);
+                                Vector3 target = Vector3.Lerp(st.stablePos, candPos, w);
+                                if (tremorFilter && tremorMaxStepMeters > 0f)
+                                {
+                                    Vector3 step = target - st.stablePos;
+                                    float maxStep = tremorMaxStepMeters;
+                                    if (step.magnitude > maxStep) target = st.stablePos + step.normalized * maxStep;
+                                }
+                                st.stablePos = target;
+                                st.stableRot = Quaternion.Slerp(st.stableRot, candRot, w);
+                                st.proxyPoint.SetPositionAndRotation(st.stablePos, st.stableRot);
+                            }
+                        }
+                        else if (tremorFilter)
+                        {
+                            // por debajo del umbral: reset contador para evitar acumular por ruido
+                            st.tremorFramesAccum = 0;
                         }
                     }
                 }
@@ -585,6 +908,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
             {
                 st.invisibleFrames++;
                 // mantenemos su última pose estable
+                if (tremorFilter) st.tremorFramesAccum = 0;
             }
         }
     }
@@ -705,8 +1029,54 @@ public class RoadFromTargetsSticky : MonoBehaviour
      */
     void GenerateRoad(List<Transform> controlPoints)
     {
+        // Detecta si la lista de control trae el primer punto repetido al final (cierre lógico)
+        bool controlClosed = false;
+        if (controlPoints != null && controlPoints.Count >= 3)
+        {
+            var firstT = controlPoints[0];
+            var lastT = controlPoints[^1];
+            controlClosed = ReferenceEquals(firstT, lastT) ||
+                            ((firstT != null && lastT != null) && (firstT.position - lastT.position).sqrMagnitude < 1e-10f);
+        }
+
+        // Copia posiciones y, si hay duplicado final, quítalo para muestrear como bucle cerrado real
         var ctrl = new List<Vector3>(controlPoints.Count);
-        foreach (var t in controlPoints) ctrl.Add(t.position);
+        var ctrlUps = new List<Vector3>(controlPoints.Count);
+        int countToCopy = controlPoints.Count;
+        if (controlClosed && countToCopy >= 2) countToCopy -= 1; // elimina el duplicado final
+        for (int i = 0; i < countToCopy; i++)
+        {
+            var t = controlPoints[i];
+            if (!t) continue;
+            Vector3 pos = t.position;
+            Vector3 upForPoint = Vector3.zero;
+            Vector3 surfPoint = Vector3.zero;
+            Vector3 surfNormal = Vector3.zero;
+            bool multiSurf = enablePerPointSurfaces;
+            if (multiSurf && TryGetSurfaceForPoint(t, out surfPoint, out surfNormal))
+            {
+                upForPoint = surfNormal.normalized;
+                if (snapControlPointsToSurface)
+                {
+                    // Proyecta la posición del punto sobre el plano detectado
+                    float d = Vector3.Dot(pos - surfPoint, upForPoint);
+                    pos = pos - upForPoint * d;
+                }
+            }
+            else
+            {
+                // Fallback: usa orientación del punto o up global
+                if (derivePlaneFromPointOrientation && !ignoreTargetRotations)
+                {
+                    // Selecciona eje local del punto
+                    upForPoint = (autoChoosePlaneAxis ? AutoChooseUpFromTransform(t) :
+                        (planeNormalAxis == OrientationAxis.Up ? t.up : (planeNormalAxis == OrientationAxis.Forward ? t.forward : t.right)));
+                }
+                if (upForPoint.sqrMagnitude < 1e-6f) upForPoint = Vector3.up;
+            }
+            ctrl.Add(pos);
+            ctrlUps.Add(upForPoint.normalized);
+        }
 
         // Opcional: forzar todos los puntos a compartir la misma Y mundial
         float yRef = 0f;
@@ -729,24 +1099,27 @@ public class RoadFromTargetsSticky : MonoBehaviour
             for (int i = 0; i < ctrl.Count; i++) ctrl[i] = new Vector3(ctrl[i].x, yRef, ctrl[i].z);
         }
 
-        // Normal del plano: bloqueada, derivada de orientación (si no se ignoran rotaciones), o geométrica
+        // Normal global de respaldo: bloqueada, derivada u geométrica (usada si no hay multi-superficie)
         Vector3 up = planeLocked ? lockedUp : Vector3.zero;
-        if (!planeLocked && derivePlaneFromPointOrientation && !ignoreTargetRotations)
+        if (!enablePerPointSurfaces)
         {
-            up = ComputeUpFromPointOrientation(controlPoints);
+            if (!planeLocked && derivePlaneFromPointOrientation && !ignoreTargetRotations)
+            {
+                up = ComputeUpFromPointOrientation(controlPoints);
+            }
+            if (up.sqrMagnitude < 1e-6f)
+            {
+                up = ComputePlaneNormal(ctrl);
+            }
+            if (snapNormalToWorldUp)
+            {
+                float aUp = Vector3.Angle(up, Vector3.up);
+                float aDown = Vector3.Angle(up, Vector3.down);
+                if (aUp <= snapUpMaxAngle) up = Vector3.up; else if (aDown <= snapUpMaxAngle) up = Vector3.down;
+            }
+            if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+            up.Normalize();
         }
-        if (up.sqrMagnitude < 1e-6f)
-        {
-            up = ComputePlaneNormal(ctrl);
-        }
-        if (snapNormalToWorldUp)
-        {
-            float aUp = Vector3.Angle(up, Vector3.up);
-            float aDown = Vector3.Angle(up, Vector3.down);
-            if (aUp <= snapUpMaxAngle) up = Vector3.up; else if (aDown <= snapUpMaxAngle) up = Vector3.down;
-        }
-        if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
-        up.Normalize();
         // Centroide como referencia del plano para una proyección más neutra
         Vector3 planePoint = planeLocked ? lockedPoint : ComputeCentroid(ctrl);
         // Si se fuerza altura constante, el plano es horizontal y pasa por Y=yRef
@@ -757,9 +1130,11 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         List<float> cum;
-        var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum);
+        var centerline = SampleCenterline(ctrl, samplesPerSegment, out cum, controlClosed);
 
-        if (flattenToTargetsPlane || forceTargetsSameHeight)
+        // Con multi-superficie, no aplanamos a un único plano global (conserva alturas)
+        bool useGlobalFlatten = (flattenToTargetsPlane || forceTargetsSameHeight) && !enablePerPointSurfaces;
+        if (useGlobalFlatten)
         {
             for (int i = 0; i < centerline.Count; i++)
             {
@@ -778,13 +1153,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         {
             centerline = RefineByCurvature(centerline, up, maxCurveAngleDeg, maxSegmentLen, maxRefinePasses);
         }
-        // Detect closed (centroide 0==last) y limpiar duplicado del final si lo hay
-        bool isClosed = centerline.Count >= 3 && (centerline[0] - centerline[^1]).sqrMagnitude < 1e-8f;
-        if (isClosed)
-        {
-            // si el último es duplicado del primero, eliminarlo para evitar pares superpuestos
-            centerline.RemoveAt(centerline.Count - 1);
-        }
+        // El centro se ha muestreado con o sin cierre según 'controlClosed'
+        bool isClosed = controlClosed;
 
         // Opcional: rotar la seam al vértice de menor curvatura para que no se note
         if (isClosed && rotateSeamToLowestCurvature && centerline.Count >= 3)
@@ -801,8 +1171,61 @@ public class RoadFromTargetsSticky : MonoBehaviour
             }
         }
 
-    // Recompute cumulative distance after changes
-    cum = ComputeCumulative(centerline);
+        // Recompute cumulative distance after changes
+        cum = ComputeCumulative(centerline);
+
+        // Calcular up por muestra: si multi-superficie, mezclar ups de los 2 control points más cercanos
+        var sampleUps = new List<Vector3>(centerline.Count);
+        if (enablePerPointSurfaces && ctrl.Count >= 1 && ctrlUps.Count == ctrl.Count)
+        {
+            for (int i = 0; i < centerline.Count; i++)
+            {
+                Vector3 p = centerline[i];
+                // Encuentra los dos puntos de control más cercanos
+                int j0 = -1, j1 = -1; float d0 = float.MaxValue, d1 = float.MaxValue;
+                for (int j = 0; j < ctrl.Count; j++)
+                {
+                    float dj = (p - ctrl[j]).sqrMagnitude;
+                    if (dj < d0)
+                    {
+                        d1 = d0; j1 = j0;
+                        d0 = dj; j0 = j;
+                    }
+                    else if (dj < d1)
+                    {
+                        d1 = dj; j1 = j;
+                    }
+                }
+                Vector3 u = Vector3.up;
+                if (j0 >= 0)
+                {
+                    float w0 = 1f / Mathf.Max(1e-6f, Mathf.Sqrt(d0));
+                    if (j1 >= 0)
+                    {
+                        float w1 = 1f / Mathf.Max(1e-6f, Mathf.Sqrt(d1));
+                        u = (ctrlUps[j0] * w0 + ctrlUps[j1] * w1);
+                    }
+                    else u = ctrlUps[j0];
+                }
+                if (u.sqrMagnitude < 1e-6f) u = Vector3.up; else u.Normalize();
+                // Snap a world up si está cerca
+                if (snapNormalToWorldUp)
+                {
+                    float aUpS = Vector3.Angle(u, Vector3.up);
+                    float aDownS = Vector3.Angle(u, Vector3.down);
+                    if (aUpS <= snapUpMaxAngle) u = Vector3.up; else if (aDownS <= snapUpMaxAngle) u = Vector3.down;
+                }
+                sampleUps.Add(u);
+            }
+            // Up de respaldo para gizmos/seguidores: promedio de sampleUps
+            Vector3 sumUp = Vector3.zero; for (int i = 0; i < sampleUps.Count; i++) sumUp += sampleUps[i];
+            if (sumUp.sqrMagnitude > 1e-6f) up = (sumUp / sampleUps.Count).normalized; else up = Vector3.up;
+        }
+        else
+        {
+            for (int i = 0; i < centerline.Count; i++) sampleUps.Add((up.sqrMagnitude < 1e-6f) ? Vector3.up : up);
+            if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+        }
 
         // ancho auto
     float avgSeg = AverageSegment(ctrl);    //!< distancia media de segmento: mean(|p[i+1]-p[i]|) para i=0..N-2
@@ -820,15 +1243,26 @@ public class RoadFromTargetsSticky : MonoBehaviour
 
         var v = new List<Vector3>(centerline.Count * 2);
         var n = new List<Vector3>(centerline.Count * 2);
-        var uv = new List<Vector2>(centerline.Count * 2);
-        var tri = new List<int>((centerline.Count - 1) * 6);
+    var uv = new List<Vector2>(centerline.Count * 2);
+    var tri = new List<int>((centerline.Count - 1) * 6);
+    // Buffers de sombra
+    var vS = new List<Vector3>(centerline.Count * 2);
+        var nS = new List<Vector3>(centerline.Count * 2);
+    var uvS = new List<Vector2>(centerline.Count * 2);
+    var triS = new List<int>((centerline.Count - 1) * 6);
 
-    Vector3 localUp = transform.InverseTransformDirection(up).normalized;
+        // Guardaremos también el up usado por cada par para asignar normales por-vértice
+        var pairUps = new List<Vector3>();
+        var spairUps = new List<Vector3>();
 
     // Construye pares L/R siguiendo todo el recorrido con posibilidad de joins redondeados
     var pairsL = new List<Vector3>();
     var pairsR = new List<Vector3>();
     var pairsU = new List<float>();
+    // Pares para sombra
+    var spairsL = new List<Vector3>();
+    var spairsR = new List<Vector3>();
+    var spairsU = new List<float>();
 
         System.Func<int, float> widthScaleAtIndex = (idx) =>
         {
@@ -842,8 +1276,9 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 inx = (idx + 1) % nC;
             }
             Vector3 p = centerline[idx];
-            Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], up).normalized;
-            Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, up).normalized;
+            Vector3 upI = sampleUps[Mathf.Clamp(idx, 0, sampleUps.Count - 1)];
+            Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], upI).normalized;
+            Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, upI).normalized;
             if (d0.sqrMagnitude < 1e-8f) d0 = d1;
             if (d1.sqrMagnitude < 1e-8f) d1 = d0;
             float ang = Vector3.Angle(d0, d1); // 0 recto, 180 giro en U
@@ -856,16 +1291,28 @@ public class RoadFromTargetsSticky : MonoBehaviour
             return Mathf.Lerp(1f, sMin, tA);
         };
 
-        System.Action<Vector3, Vector3, float, float> addPairSimple = (p, dir, uval, scale) =>
+        System.Action<Vector3, Vector3, float, float, Vector3> addPairSimple = (p, dir, uval, scale, upAt) =>
         {
-            Vector3 tdir = ProjectOnPlaneSafe(dir, up).normalized;
+            Vector3 tdir = ProjectOnPlaneSafe(dir, upAt).normalized;
             if (tdir.sqrMagnitude < 1e-8f) tdir = Vector3.forward;
-            Vector3 right = Vector3.Cross(tdir, up).normalized;
+            Vector3 right = Vector3.Cross(tdir, upAt).normalized;
             if (right.sqrMagnitude < 1e-8f) right = Vector3.right;
             float h = half * Mathf.Clamp(scale, 0.1f, 1f);
-            pairsL.Add(p - right * h + up * surfaceOffset);
-            pairsR.Add(p + right * h + up * surfaceOffset);
+            // Carretera
+            pairsL.Add(p - right * h + upAt * surfaceOffset);
+            pairsR.Add(p + right * h + upAt * surfaceOffset);
             pairsU.Add(uval);
+            pairUps.Add(upAt);
+            // Sombra
+            if (addUnderShadow)
+            {
+                float hs = (h + Mathf.Max(0f, shadowExtraWidthMeters));
+                float soff = surfaceOffset + shadowUnderOffset; // normalmente menor que surfaceOffset
+                spairsL.Add(p - right * hs + upAt * soff);
+                spairsR.Add(p + right * hs + upAt * soff);
+                spairsU.Add(uval);
+                spairUps.Add(upAt);
+            }
         };
 
         System.Action<int> addMiterAt = (iIdx) =>
@@ -874,11 +1321,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
             Vector3 offsetL, offsetR;
             float scale = widthScaleAtIndex(iIdx);
             float h = half * Mathf.Clamp(scale, 0.1f, 1f);
-            ComputeMiterOffsets(centerline, iIdx, up, h, miterLimit, isClosed, out offsetL, out offsetR);
-            pairsL.Add(p + offsetL + up * surfaceOffset);
-            pairsR.Add(p + offsetR + up * surfaceOffset);
+            Vector3 upI = sampleUps[Mathf.Clamp(iIdx, 0, sampleUps.Count - 1)];
+            ComputeMiterOffsets(centerline, iIdx, upI, h, miterLimit, isClosed, out offsetL, out offsetR);
+            pairsL.Add(p + offsetL + upI * surfaceOffset);
+            pairsR.Add(p + offsetR + upI * surfaceOffset);
             float u = cum[Mathf.Clamp(iIdx, 0, cum.Count - 1)] * uvTilesPerMeter;
             pairsU.Add(u);
+            pairUps.Add(upI);
+            if (addUnderShadow)
+            {
+                // Para la sombra, expandimos extra hacia fuera manteniendo la dirección del offset
+                Vector3 offL = offsetL.normalized * (offsetL.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
+                Vector3 offR = offsetR.normalized * (offsetR.magnitude + Mathf.Max(0f, shadowExtraWidthMeters));
+                float soff = surfaceOffset + shadowUnderOffset;
+                spairsL.Add(p + offL + upI * soff);
+                spairsR.Add(p + offR + upI * soff);
+                spairsU.Add(u);
+                spairUps.Add(upI);
+            }
         };
 
         if (isClosed)
@@ -889,14 +1349,15 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int ip = (i - 1 + nC) % nC;
                 int inx = (i + 1) % nC;
                 Vector3 p = centerline[i];
-                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], up).normalized;
-                Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, up).normalized;
+                Vector3 upI = sampleUps[i];
+                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[ip], upI).normalized;
+                Vector3 d1 = ProjectOnPlaneSafe(centerline[inx] - p, upI).normalized;
                 if (d0.sqrMagnitude < 1e-8f) d0 = d1;
                 if (d1.sqrMagnitude < 1e-8f) d1 = d0;
 
                 if (useRoundedJoins)
                 {
-                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, up), -180f, 180f);
+                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, upI), -180f, 180f);
                     float absAng = Mathf.Abs(ang);
                     int steps = Mathf.Max(1, Mathf.CeilToInt((absAng / 90f) * roundSegmentsPer90));
                     for (int k = 0; k <= steps; k++)
@@ -904,7 +1365,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                         float t = (steps == 0) ? 1f : (k / (float)steps);
                         Vector3 dir = Vector3.Slerp(d0, d1, t);
                         float sc = widthScaleAtIndex(i);
-                        addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc);
+                        addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc, upI);
                     }
                 }
                 else if (useMiterJoins)
@@ -917,7 +1378,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                     Vector3 dir = (d0 + d1);
                     if (dir.sqrMagnitude < 1e-8f) dir = d1;
                     float sc = widthScaleAtIndex(i);
-                    addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc);
+                    addPairSimple(p, dir, cum[Mathf.Clamp(i, 0, cum.Count - 1)] * uvTilesPerMeter, sc, upI);
                 }
             }
         }
@@ -928,20 +1389,22 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int i0 = 0; int i1 = (centerline.Count > 1) ? 1 : 0;
                 Vector3 dir = (centerline[i1] - centerline[i0]);
                 float sc0 = widthScaleAtIndex(i0);
-                addPairSimple(centerline[i0], dir, cum[i0] * uvTilesPerMeter, sc0);
+                Vector3 up0 = sampleUps[Mathf.Clamp(i0, 0, sampleUps.Count - 1)];
+                addPairSimple(centerline[i0], dir, cum[i0] * uvTilesPerMeter, sc0, up0);
             }
 
             for (int i = 1; i < centerline.Count - 1; i++)
             {
                 Vector3 p = centerline[i];
-                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[i - 1], up).normalized;
-                Vector3 d1 = ProjectOnPlaneSafe(centerline[i + 1] - p, up).normalized;
+                Vector3 upI = sampleUps[i];
+                Vector3 d0 = ProjectOnPlaneSafe(p - centerline[i - 1], upI).normalized;
+                Vector3 d1 = ProjectOnPlaneSafe(centerline[i + 1] - p, upI).normalized;
                 if (d0.sqrMagnitude < 1e-8f) d0 = d1;
                 if (d1.sqrMagnitude < 1e-8f) d1 = d0;
 
                 if (useRoundedJoins)
                 {
-                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, up), -180f, 180f);
+                    float ang = Mathf.Clamp(Vector3.SignedAngle(d0, d1, upI), -180f, 180f);
                     float absAng = Mathf.Abs(ang);
                     int steps = Mathf.Max(1, Mathf.CeilToInt((absAng / 90f) * roundSegmentsPer90));
                     for (int k = 0; k <= steps; k++)
@@ -949,7 +1412,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                         float t = (steps == 0) ? 1f : (k / (float)steps);
                         Vector3 dir = Vector3.Slerp(d0, d1, t);
                         float sc = widthScaleAtIndex(i);
-                        addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc);
+                        addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc, upI);
                     }
                 }
                 else if (useMiterJoins)
@@ -960,7 +1423,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 {
                     Vector3 dir = (centerline[i + 1] - centerline[i]);
                     float sc = widthScaleAtIndex(i);
-                    addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc);
+                    addPairSimple(p, dir, cum[i] * uvTilesPerMeter, sc, upI);
                 }
             }
 
@@ -969,7 +1432,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
                 int last = centerline.Count - 1;
                 Vector3 dir = (centerline[last] - centerline[last - 1]);
                 float scl = widthScaleAtIndex(last);
-                addPairSimple(centerline[last], dir, cum[last] * uvTilesPerMeter, scl);
+                Vector3 upL = sampleUps[Mathf.Clamp(last, 0, sampleUps.Count - 1)];
+                addPairSimple(centerline[last], dir, cum[last] * uvTilesPerMeter, scl, upL);
             }
         }
 
@@ -982,10 +1446,26 @@ public class RoadFromTargetsSticky : MonoBehaviour
             Vector3 Ll = transform.InverseTransformPoint(pairsL[i]);
             Vector3 Rl = transform.InverseTransformPoint(pairsR[i]);
             v.Add(Ll); v.Add(Rl);
-            n.Add(localUp); n.Add(localUp);
+            Vector3 localUpI = transform.InverseTransformDirection(pairUps[Mathf.Clamp(i, 0, pairUps.Count - 1)]).normalized;
+            n.Add(localUpI); n.Add(localUpI);
             float uval = pairsU[i];
             uv.Add(new Vector2(uval, 0f));
             uv.Add(new Vector2(uval, 1f));
+        }
+
+        if (addUnderShadow)
+        {
+            for (int i = 0; i < spairsL.Count; i++)
+            {
+                Vector3 Ll = transform.InverseTransformPoint(spairsL[i]);
+                Vector3 Rl = transform.InverseTransformPoint(spairsR[i]);
+                vS.Add(Ll); vS.Add(Rl);
+                Vector3 localUpI = transform.InverseTransformDirection(spairUps[Mathf.Clamp(i, 0, spairUps.Count - 1)]).normalized;
+                nS.Add(localUpI); nS.Add(localUpI);
+                float uval = spairsU[i];
+                uvS.Add(new Vector2(uval, 0f));
+                uvS.Add(new Vector2(uval, 1f));
+            }
         }
 
         // Winding automático para que siempre se vea (culling). Usar 'localUp' (espacio local).
@@ -994,7 +1474,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
         {
             Vector3 a = v[1] - v[0]; // L0->R0
             Vector3 b = v[2] - v[0]; // L0->L1
-            float s = Vector3.Dot(Vector3.Cross(a, b), localUp);
+            Vector3 firstUpLocal = (pairUps.Count > 0) ? transform.InverseTransformDirection(pairUps[0]).normalized : Vector3.up;
+            float s = Vector3.Dot(Vector3.Cross(a, b), firstUpLocal);
             ccwUp = s > 0f;
         }
 
@@ -1011,6 +1492,24 @@ public class RoadFromTargetsSticky : MonoBehaviour
             {
                 tri.Add(i);     tri.Add(i + 1); tri.Add(i + 2);
                 tri.Add(i + 1); tri.Add(i + 3); tri.Add(i + 2);
+            }
+        }
+
+        if (addUnderShadow && vS.Count >= 4)
+        {
+            triS.Clear();
+            for (int i = 0; i < vS.Count - 2; i += 2)
+            {
+                if (ccwUp)
+                {
+                    triS.Add(i);     triS.Add(i + 2); triS.Add(i + 1);
+                    triS.Add(i + 1); triS.Add(i + 2); triS.Add(i + 3);
+                }
+                else
+                {
+                    triS.Add(i);     triS.Add(i + 1); triS.Add(i + 2);
+                    triS.Add(i + 1); triS.Add(i + 3); triS.Add(i + 2);
+                }
             }
         }
 
@@ -1033,12 +1532,187 @@ public class RoadFromTargetsSticky : MonoBehaviour
             }
         }
 
+        if (addUnderShadow && isClosed && vS.Count >= 4)
+        {
+            int lastPairL = vS.Count - 2;
+            int lastPairR = vS.Count - 1;
+            int firstPairL = 0;
+            int firstPairR = 1;
+            if (ccwUp)
+            {
+                triS.Add(lastPairL); triS.Add(firstPairL); triS.Add(lastPairR);
+                triS.Add(lastPairR); triS.Add(firstPairL); triS.Add(firstPairR);
+            }
+            else
+            {
+                triS.Add(lastPairL); triS.Add(lastPairR); triS.Add(firstPairL);
+                triS.Add(lastPairR); triS.Add(firstPairR); triS.Add(firstPairL);
+            }
+        }
+
         mesh.Clear();
         mesh.SetVertices(v);
         mesh.SetNormals(n);
         mesh.SetUVs(0, uv);
         mesh.SetTriangles(tri, 0);
         mesh.RecalculateBounds();
+
+        // Generar líneas de carril (pintura)
+        if (enableLaneLines && linesMesh != null)
+        {
+            int nC = centerline.Count;
+            var rights = new Vector3[nC];
+            for (int i = 0; i < nC; i++)
+            {
+                int inx = (isClosed ? (i + 1) % nC : Mathf.Min(i + 1, nC - 1));
+                Vector3 upI = sampleUps[i];
+                Vector3 tan = ProjectOnPlaneSafe(centerline[inx] - centerline[i], upI).normalized;
+                if (tan.sqrMagnitude < 1e-8f)
+                {
+                    int ip = (isClosed ? (i - 1 + nC) % nC : Mathf.Max(i - 1, 0));
+                    tan = ProjectOnPlaneSafe(centerline[i] - centerline[ip], upI).normalized;
+                    if (tan.sqrMagnitude < 1e-8f) tan = Vector3.forward;
+                }
+                rights[i] = Vector3.Cross(tan, upI).normalized;
+                if (rights[i].sqrMagnitude < 1e-8f) rights[i] = Vector3.right;
+            }
+
+            var vL = new List<Vector3>();
+            var nL = new List<Vector3>();
+            var uvL = new List<Vector2>();
+            var triL = new List<int>();
+            float lineOffset = surfaceOffset + Mathf.Max(0f, linesLiftOffsetMeters); // elevar levemente sobre la carretera
+
+            bool ShouldDrawAtS(float s)
+            {
+                if (!centerLinesDashed) return true; // si no es discontinua, siempre dibuja
+                float period = Mathf.Max(1e-4f, dashLengthMeters + gapLengthMeters);
+                float phase = (s + dashOffsetMeters) % period;
+                return phase < dashLengthMeters;
+            }
+
+            System.Action<float, float, bool> addLineAtT = (tRel, width, dashed) =>
+            {
+                int baseIndex = vL.Count;
+                for (int i = 0; i < nC; i++)
+                {
+                    Vector3 center = centerline[i] + rights[i] * (tRel * 2f * half) + up * lineOffset;
+                    Vector3 r = rights[i];
+                    float hw = Mathf.Max(0.001f, width * 0.5f);
+                    Vector3 a = transform.InverseTransformPoint(center - r * hw);
+                    Vector3 b = transform.InverseTransformPoint(center + r * hw);
+                    vL.Add(a); vL.Add(b);
+                    Vector3 localUpI = transform.InverseTransformDirection(sampleUps[i]).normalized;
+                    nL.Add(localUpI); nL.Add(localUpI);
+                    float uval = cum[Mathf.Clamp(i, 0, cum.Count - 1)] * lineUvTilesPerMeter;
+                    uvL.Add(new Vector2(uval, 0f));
+                    uvL.Add(new Vector2(uval, 1f));
+                }
+                int stripVerts = nC * 2;
+                for (int i = 0; i < stripVerts - 2; i += 2)
+                {
+                    int i0 = baseIndex + i;
+                    // Distancia acumulada aproximada del segmento i/2
+                    int seg = i / 2;
+                    bool drawThis = true;
+                    if (dashed)
+                    {
+                        // Usar el centro del segmento para decidir dash/gap
+                        float sMid = 0f;
+                        if (seg >= 0 && seg < cum.Count - 1)
+                            sMid = 0.5f * (cum[seg] + cum[seg + 1]);
+                        drawThis = ShouldDrawAtS(sMid);
+                    }
+                    if (!drawThis) continue;
+                    if (ccwUp)
+                    {
+                        triL.Add(i0);     triL.Add(i0 + 2); triL.Add(i0 + 1);
+                        triL.Add(i0 + 1); triL.Add(i0 + 2); triL.Add(i0 + 3);
+                    }
+                    else
+                    {
+                        triL.Add(i0);     triL.Add(i0 + 1); triL.Add(i0 + 2);
+                        triL.Add(i0 + 1); triL.Add(i0 + 3); triL.Add(i0 + 2);
+                    }
+                }
+                if (isClosed)
+                {
+                    int lastPairL = baseIndex + stripVerts - 2;
+                    int lastPairR = baseIndex + stripVerts - 1;
+                    int firstPairL = baseIndex + 0;
+                    int firstPairR = baseIndex + 1;
+                    bool drawClose = true;
+                    if (dashed)
+                    {
+                        float sMid = 0.5f * (cum[^1] + 0f); // cierre aprox entre último y primero
+                        drawClose = ShouldDrawAtS(sMid);
+                    }
+                    if (drawClose && ccwUp)
+                    {
+                        triL.Add(lastPairL); triL.Add(firstPairL); triL.Add(lastPairR);
+                        triL.Add(lastPairR); triL.Add(firstPairL); triL.Add(firstPairR);
+                    }
+                    else if (drawClose)
+                    {
+                        triL.Add(lastPairL); triL.Add(lastPairR); triL.Add(firstPairL);
+                        triL.Add(lastPairR); triL.Add(firstPairR); triL.Add(firstPairL);
+                    }
+                }
+            };
+
+            int lanes = Mathf.Max(1, laneCount);
+            if (drawCenterLines && lanes >= 2)
+            {
+                for (int k = 1; k <= lanes - 1; k++)
+                {
+                    float tRel = Mathf.Lerp(-0.5f, 0.5f, k / (float)lanes);
+                    // Líneas internas discontinuas si centerLinesDashed
+                    addLineAtT(tRel, centerLineWidthMeters, centerLinesDashed);
+                }
+            }
+            if (drawEdgeLines)
+            {
+                addLineAtT(-0.5f, edgeLineWidthMeters, false);
+                addLineAtT( 0.5f, edgeLineWidthMeters, false);
+            }
+
+            linesMesh.Clear();
+            linesMesh.SetVertices(vL);
+            linesMesh.SetNormals(nL);
+            linesMesh.SetUVs(0, uvL);
+            linesMesh.SetTriangles(triL, 0);
+            linesMesh.RecalculateBounds();
+
+            if (linesMr && linesMr.sharedMaterial)
+            {
+                var mat = linesMr.sharedMaterial;
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", laneLineColor);
+                if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     laneLineColor);
+                if (laneLineTexture)
+                {
+                    if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", laneLineTexture);
+                    if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", laneLineTexture);
+                }
+            }
+        }
+
+        // Volcar sombra si corresponde
+        if (addUnderShadow && shadowMesh != null && shadowMr != null)
+        {
+            shadowMesh.Clear();
+            shadowMesh.SetVertices(vS);
+            shadowMesh.SetNormals(nS);
+            shadowMesh.SetUVs(0, uvS);
+            shadowMesh.SetTriangles(triS, 0);
+            shadowMesh.RecalculateBounds();
+            // Actualiza color si material lo soporta
+            var mat = shadowMr.sharedMaterial;
+            if (mat != null)
+            {
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", shadowColor);
+                if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     shadowColor);
+            }
+        }
 
         // Cache para seguidores
         lastCenterline.Clear();
@@ -1048,7 +1722,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
         lastClosed = isClosed;
         lastTotalWidth = totalWidth;
 
-    Debug.Log($"[Road] StablePts={controlPoints.Count}  Verts={v.Count}  Tris={tri.Count / 3}  Width={totalWidth:F3}m  Mode={widthMode}");
+        Debug.Log($"[Road] StablePts={controlPoints.Count}  Verts={v.Count}  Tris={tri.Count / 3}  Width={totalWidth:F3}m  Mode={widthMode}  Shadow={(addUnderShadow ? vS.Count : 0)}  Lines={(enableLaneLines ? (linesMesh != null ? linesMesh.vertexCount : 0) : 0)}");
     }
 
     // -------------------- Suavizado y joins --------------------
@@ -1220,7 +1894,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         // Segmento de cierre explícito (último -> primero) si procede
-        if (drawLoopClosureGizmo && closeLoopWhenAtLeast3 && lastUsedControlPoints.Count >= 3)
+        if (connectMode == ConnectMode.Sequential && drawLoopClosureGizmo && closeLoopWhenAtLeast3 && lastUsedControlPoints.Count >= 3)
         {
             var first = lastUsedControlPoints[0];
             var last = lastUsedControlPoints[^1];
@@ -1346,8 +2020,8 @@ public class RoadFromTargetsSticky : MonoBehaviour
             {
                 for (int li = 0; li < lanes; li++)
                 {
-                    // mapear li a [-0.5, 0.5]
-                    float t = (lanes == 1) ? 0f : (li / (float)(lanes - 1)) - 0.5f;
+                    // mapear li a [-0.5, 0.5] con margen
+                    float t = (lanes == 1) ? 0f : LaneIndexToTRel(li);
                     Gizmos.color = laneCenterColor;
                     for (int i = 0; i < lastCenterline.Count - 1; i += step)
                     {
@@ -1469,7 +2143,7 @@ public class RoadFromTargetsSticky : MonoBehaviour
      * @param cumulativeDist Distancia acumulada a lo largo de la polilínea muestreada.
      * @details Parámetros centrípetos: t[i] = t[i-1] + |p[i] - p[i-1]|^0.5.
      */
-    List<Vector3> SampleCenterline(List<Vector3> pts, int samples, out List<float> cumulativeDist)
+    List<Vector3> SampleCenterline(List<Vector3> pts, int samples, out List<float> cumulativeDist, bool controlClosed = false)
     {
         cumulativeDist = new List<float>();
         var result = new List<Vector3>();
@@ -1488,33 +2162,64 @@ public class RoadFromTargetsSticky : MonoBehaviour
         }
 
         float accDist = 0f;
-        for (int i = 0; i < pts.Count - 1; i++)
+        if (controlClosed && pts.Count >= 3)
         {
-            Vector3 p0 = (i == 0) ? pts[i] : pts[i - 1];
-            Vector3 p1 = pts[i];
-            Vector3 p2 = pts[i + 1];
-            Vector3 p3 = (i + 2 < pts.Count) ? pts[i + 2] : pts[i + 1];
-
-            int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
-            for (int s = s0; s <= samples; s++)
+            int n = pts.Count; // sin duplicados
+            for (int i = 0; i < n; i++)
             {
-                float t = s / (float)samples;
-                Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
-                if (s == 0) pt = p1;
-                if (s == samples) pt = p2;
+                int i0 = (i - 1 + n) % n;
+                int i1 = i;
+                int i2 = (i + 1) % n;
+                int i3 = (i + 2) % n;
+                Vector3 p0 = pts[i0];
+                Vector3 p1 = pts[i1];
+                Vector3 p2 = pts[i2];
+                Vector3 p3 = pts[i3];
 
-                if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
-                result.Add(pt); cumulativeDist.Add(accDist);
+                int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
+                for (int s = s0; s <= samples; s++)
+                {
+                    float t = s / (float)samples;
+                    Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
+                    if (s == 0) pt = p1;
+                    if (s == samples) pt = p2;
+
+                    if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
+                    result.Add(pt); cumulativeDist.Add(accDist);
+                }
             }
+            return result;
         }
-
-        if (result.Count > 0)
+        else
         {
-            Vector3 last = pts[^1];
-            accDist += Vector3.Distance(last, result[^1]);
-            result[^1] = last; cumulativeDist[^1] = accDist;
+            for (int i = 0; i < pts.Count - 1; i++)
+            {
+                Vector3 p0 = (i == 0) ? pts[i] : pts[i - 1];
+                Vector3 p1 = pts[i];
+                Vector3 p2 = pts[i + 1];
+                Vector3 p3 = (i + 2 < pts.Count) ? pts[i + 2] : pts[i + 1];
+
+                int s0 = (i == 0) ? 0 : 1; // evita duplicar el primer punto del tramo
+                for (int s = s0; s <= samples; s++)
+                {
+                    float t = s / (float)samples;
+                    Vector3 pt = CatmullRomCentripetal(p0, p1, p2, p3, t);
+                    if (s == 0) pt = p1;
+                    if (s == samples) pt = p2;
+
+                    if (result.Count > 0) accDist += Vector3.Distance(pt, result[^1]);
+                    result.Add(pt); cumulativeDist.Add(accDist);
+                }
+            }
+
+            if (result.Count > 0)
+            {
+                Vector3 last = pts[^1];
+                accDist += Vector3.Distance(last, result[^1]);
+                result[^1] = last; cumulativeDist[^1] = accDist;
+            }
+            return result;
         }
-        return result;
     }
 
     /**
@@ -1557,5 +2262,101 @@ public class RoadFromTargetsSticky : MonoBehaviour
             if (n.sqrMagnitude > 1e-10f) sum += n.normalized;
         }
         return (sum.sqrMagnitude < 1e-6f) ? Vector3.up : sum.normalized;
+    }
+
+    // -------------------- Superficies (Vuforia / Física) --------------------
+    bool TryGetSurfaceForPoint(Transform t, out Vector3 planePoint, out Vector3 planeNormal)
+    {
+        planePoint = t ? t.position : Vector3.zero;
+        planeNormal = Vector3.zero;
+        switch (perPointSurfaceSource)
+        {
+            case SurfaceSource.None:
+                return false;
+            case SurfaceSource.UseTargetOrientation:
+            {
+                planeNormal = AutoChooseUpFromTransform(t);
+                if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
+                return true;
+            }
+            case SurfaceSource.PhysicsRaycastDown:
+            {
+                // Probar hacia abajo y hacia arriba, el más cercano gana
+                Vector3 origin = t ? t.position : Vector3.zero;
+                float maxDist = Mathf.Max(0.01f, surfaceRaycastMaxDistance);
+                RaycastHit hit;
+                bool hitDown = Physics.Raycast(origin + Vector3.up * 0.01f, Vector3.down, out hit, maxDist + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore);
+                float dDown = hitDown ? hit.distance : float.MaxValue;
+                RaycastHit hitUp;
+                bool hitUpB = Physics.Raycast(origin + Vector3.down * 0.01f, Vector3.up, out hitUp, maxDist + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore);
+                float dUp = hitUpB ? hitUp.distance : float.MaxValue;
+                if (hitDown || hitUpB)
+                {
+                    if (dDown <= dUp)
+                    {
+                        planePoint = hit.point;
+                        planeNormal = hit.normal;
+                    }
+                    else
+                    {
+                        planePoint = hitUp.point;
+                        planeNormal = hitUp.normal;
+                    }
+                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
+                    return true;
+                }
+                return false;
+            }
+            case SurfaceSource.VuforiaAnchorOnTarget:
+            default:
+            {
+#if VUFORIA_PRESENT
+                // Buscar un AnchorBehaviour cercano al punto/target
+                Vuforia.AnchorBehaviour ab = (t ? t.GetComponentInParent<Vuforia.AnchorBehaviour>() : null);
+                if (!ab && t) ab = t.GetComponentInChildren<Vuforia.AnchorBehaviour>();
+                if (ab && ab.transform)
+                {
+                    planePoint = ab.transform.position;
+                    planeNormal = ab.transform.up;
+                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
+                    return true;
+                }
+                // Fallback: usar ObserverBehaviour (Ground Plane usa hit pose plana)
+                Vuforia.ObserverBehaviour ob = (t ? t.GetComponentInParent<Vuforia.ObserverBehaviour>() : null);
+                if (!ob && t) ob = t.GetComponentInChildren<Vuforia.ObserverBehaviour>();
+                if (ob && ob.transform)
+                {
+                    planePoint = ob.transform.position;
+                    planeNormal = ob.transform.up;
+                    if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
+                    return true;
+                }
+#endif
+                // Sin Vuforia o sin anchor: probar raycast como respaldo
+                Vector3 origin = t ? t.position : Vector3.zero;
+                RaycastHit hit;
+                if (Physics.Raycast(origin + Vector3.up * 0.01f, Vector3.down, out hit, Mathf.Max(0.01f, surfaceRaycastMaxDistance) + 0.01f, surfaceRaycastLayers, QueryTriggerInteraction.Ignore))
+                {
+                    planePoint = hit.point; planeNormal = hit.normal; return true;
+                }
+                planeNormal = AutoChooseUpFromTransform(t);
+                if (planeNormal.sqrMagnitude < 1e-6f) planeNormal = Vector3.up;
+                return true;
+            }
+        }
+    }
+
+    Vector3 AutoChooseUpFromTransform(Transform t)
+    {
+        if (!t) return Vector3.up;
+        Vector3[] candidates = new[] { t.up, t.forward, t.right, -t.up, -t.forward, -t.right };
+        float bestDot = -1f; Vector3 best = t.up;
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            Vector3 c = candidates[i]; if (c.sqrMagnitude < 1e-6f) continue;
+            float d = Mathf.Abs(Vector3.Dot(c.normalized, Vector3.up));
+            if (d > bestDot) { bestDot = d; best = c; }
+        }
+        return best.normalized;
     }
 }
