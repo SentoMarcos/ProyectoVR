@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QCARConfig>
+  <Tracking>
+    <ImageTarget name="cafes" size="1.000000 1.579474" />
+    <ImageTarget name="metroval" size="1.000000 1.579602" />
+    <ImageTarget name="nintendo" size="1.000000 1.111111" />
+    <ImageTarget name="bonobus" size="1.000000 0.624606" />
+    <ImageTarget name="carrefour" size="1.000000 1.587597" />
+    <ImageTarget name="steam" size="1.000000 1.480595" />
+  </Tracking>
+</QCARConfig>
