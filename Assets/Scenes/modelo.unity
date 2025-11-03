@@ -131,7 +131,6 @@ GameObject:
   - component: {fileID: 189649232}
   - component: {fileID: 189649231}
   - component: {fileID: 189649230}
-  - component: {fileID: 189649234}
   - component: {fileID: 189649235}
   m_Layer: 5
   m_Name: Canvas
@@ -224,18 +223,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
---- !u!114 &189649234
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 189649229}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a1408a43647d49b4fa9c52de96cf8c4f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::pauseMenu1
 --- !u!114 &189649235
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -245,13 +232,15 @@ MonoBehaviour:
   m_GameObject: {fileID: 189649229}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d9714b01021087a4690f60058766ab85, type: 3}
+  m_Script: {fileID: 11500000, guid: 9607312604e6a1c458a9c07be88ec3f3, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::pauseMenu1
-  pauseMenuUi: {fileID: 0}
+  m_EditorClassIdentifier: Assembly-CSharp::PauseMenu
+  pauseMenuUI: {fileID: 0}
   arObject: {fileID: 0}
   scriptsToPause: []
   animatorsToPause: []
+  enableTapToShow: 1
+  tapCooldown: 0.2
 --- !u!1 &208707156
 GameObject:
   m_ObjectHideFlags: 0
@@ -336,7 +325,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 189649235}
-        m_TargetAssemblyTypeName: pauseMenu1, Assembly-CSharp
+        m_TargetAssemblyTypeName: PauseMenu, Assembly-CSharp
         m_MethodName: ReturnToMenu
         m_Mode: 1
         m_Arguments:
@@ -779,9 +768,9 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 189649235}
-        m_TargetAssemblyTypeName: pauseMenu1, Assembly-CSharp
-        m_MethodName: model
+      - m_Target: {fileID: 1393611493}
+        m_TargetAssemblyTypeName: MouseTouchRotateScale, Assembly-CSharp
+        m_MethodName: ResetBike
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -1129,6 +1118,9 @@ PrefabInstance:
     - {fileID: 4491190400091413576, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
     - {fileID: 8679515425684739196, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
     - {fileID: 1185004242973101541, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
+    - {fileID: 8791007000673198205, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
+    - {fileID: 5510940797720943338, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
+    - {fileID: 1465476741719960426, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 1474250562952290194, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
