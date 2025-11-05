@@ -132,11 +132,13 @@ public partial class RoadFromTargetsSticky
         }
         void Update()
         {
+            if (manualFreeze) return;
             if (updateIfChange) Tick();
         }
 
         void Tick()
         {
+            if (manualFreeze) return;
             if (!targetsRoot)
             {
                 if (logWhenNoPoints) Debug.LogWarning("[Road] No se encontró 'Targets'.");

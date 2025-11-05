@@ -146,6 +146,10 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
         public Color leftEdgeColor = new Color(0.9f, 0.1f, 0.1f, 0.9f);
         public Color rightEdgeColor = new Color(0.1f, 0.1f, 0.9f, 0.9f);
 
+    [Header("Controles en tiempo de ejecución")]
+    [Tooltip("Si está activo, ignora cualquier actualización (Update y eventos) y mantiene la carretera fija")]
+    public bool manualFreeze = false;
+
         // -------------------- Estado --------------------
         MeshFilter mf;
         Mesh mesh;
