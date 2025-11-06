@@ -4,7 +4,6 @@ using UnityEngine.SceneManagement;
 public class MotoCollision : MonoBehaviour
 {
     [Header("Referencias")]
-    public MotoController controller;     // Referencia al script de movimiento
     public GameObject crashEffectPrefab;  // Prefab de explosión o chispas (asígnalo en el inspector)
     public AudioClip crashSound;          // Sonido del choque (opcional)
 
@@ -14,14 +13,10 @@ public class MotoCollision : MonoBehaviour
     {
         if (hasCrashed) return;
 
-        if (collision.gameObject.CompareTag("Van"))
+        if (collision.gameObject.CompareTag("NPC"))
         {
             hasCrashed = true;
             Debug.Log("💥 ¡Has chocado! Game Over");
-
-            // Desactivar control de la moto
-            if (controller != null)
-                controller.enabled = false;
 
             // Detener movimiento
             Rigidbody rb = GetComponent<Rigidbody>();

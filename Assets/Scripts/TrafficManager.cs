@@ -19,7 +19,7 @@ public class TrafficManager : MonoBehaviour
     public int reservedLaneIndex = 0; // carril para la moto
 
     [Header("Prefab (si se deja vacío, se crea una caja)")]
-    public GameObject carPrefab;
+    public GameObject[] carPrefabs;
     public Vector3 carBoxSize = new Vector3(0.3f, 0.15f, 0.6f);
 
     readonly List<TrafficAgent> agents = new();
@@ -72,9 +72,11 @@ public class TrafficManager : MonoBehaviour
     void CreateCar(int laneIndex, float startS, float desiredSpeed)
     {
         GameObject go;
-        if (carPrefab)
+        // **CAMBIO AQUÍ: Selecciona un prefab aleatorio si el array no está vacío**
+        if (carPrefabs != null && carPrefabs.Length > 0)
         {
-            go = Instantiate(carPrefab, transform);
+            GameObject selectedPrefab = carPrefabs[Random.Range(0, carPrefabs.Length)];
+            go = Instantiate(selectedPrefab, transform);
         }
         else
         {
@@ -83,6 +85,7 @@ public class TrafficManager : MonoBehaviour
             var coll = go.GetComponent<Collider>(); if (coll) Destroy(coll);
             go.transform.localScale = carBoxSize;
         }
+        go.tag = "NPC";
 
         var follower = go.AddComponent<RoadLaneFollower>();
         follower.road = road;

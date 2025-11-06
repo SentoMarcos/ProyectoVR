@@ -1160,7 +1160,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 160, y: -29.99997}
+  m_AnchoredPosition: {x: 160, y: -30}
   m_SizeDelta: {x: 140, y: 140}
   m_Pivot: {x: 0, y: 0}
 --- !u!114 &700312576
@@ -1272,11 +1272,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 700312574}
   m_CullTransparentMesh: 1
---- !u!1 &718353133 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 2026992508675603353, guid: 2e66130b0d09e7e4d9f07fdc08cd8879, type: 3}
-  m_PrefabInstance: {fileID: 3257278649604751710}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &786990775
 GameObject:
   m_ObjectHideFlags: 0
@@ -1833,6 +1828,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5609804448436292901, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1964602107}
+    - targetCorrespondingSourceObject: {fileID: 5609804448436292901, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1964602111}
   m_SourcePrefab: {fileID: 100100000, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
 --- !u!114 &936332528 stripped
 MonoBehaviour:
@@ -3437,7 +3435,13 @@ MonoBehaviour:
   minSpacingMeters: 1
   speedRange: {x: 0.8, y: 1.6}
   reservedLaneIndex: 0
-  carPrefab: {fileID: 718353133}
+  carPrefabs:
+  - {fileID: 7573186547737297904, guid: 9d4e0598264b20549a42ad650855cda7, type: 3}
+  - {fileID: 3332444208856464062, guid: fdff883ec6573bd4483f3bf1250b19a5, type: 3}
+  - {fileID: 3533850413383273023, guid: 8f545f11de77186449aa352aa5d38fe9, type: 3}
+  - {fileID: 6287319582821184461, guid: 77653068d1cd5254c82b4e0048353235, type: 3}
+  - {fileID: 5686074402418921634, guid: 3c5b9150bbe75ad458fb7e4b20dc7b79, type: 3}
+  - {fileID: 1894404873762196831, guid: ae918a24f13c5784ea89fc59b6e39038, type: 3}
   carBoxSize: {x: 0.3, y: 0.15, z: 0.6}
   debugSpawnLogs: 0
 --- !u!4 &1790396661
@@ -3491,7 +3495,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 40, y: -29.99997}
+  m_AnchoredPosition: {x: 40, y: -30}
   m_SizeDelta: {x: 140, y: 140}
   m_Pivot: {x: 0, y: 0}
 --- !u!114 &1944420475
@@ -3716,6 +3720,20 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &1964602111
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1964602097}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1c2dc9e0c6322a44ae66758fb126ab7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MotoCollision
+  crashEffectPrefab: {fileID: 2661202712319325695, guid: 844ba4018e10e2e4c87ded80de920bad, type: 3}
+  crashSound: {fileID: 0}
 --- !u!1 &1991973276
 GameObject:
   m_ObjectHideFlags: 0
