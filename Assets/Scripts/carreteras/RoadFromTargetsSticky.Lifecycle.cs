@@ -11,6 +11,13 @@ public partial class RoadFromTargetsSticky
         Vector3 lockedUp = Vector3.up;
         Vector3 lockedPoint = Vector3.zero;
 
+    // Height tint property block (for Custom/RoadHeightTintURP or compatible)
+    MaterialPropertyBlock _mpb; // lazy-inited
+    static readonly int _AxisId = Shader.PropertyToID("_Axis");
+    static readonly int _BasePointId = Shader.PropertyToID("_BasePoint");
+    static readonly int _HMinId = Shader.PropertyToID("_HeightMin");
+    static readonly int _HMaxId = Shader.PropertyToID("_HeightMax");
+
         void Awake()
         {
             mf = GetComponent<MeshFilter>();
@@ -20,7 +27,10 @@ public partial class RoadFromTargetsSticky
             mr = GetComponent<MeshRenderer>();
             if (mr != null && (mr.sharedMaterial == null || mr.sharedMaterial.shader == null))
             {
-                Shader sh = Shader.Find("Universal Render Pipeline/Unlit");
+                // Prefer our custom height-tint shader if present
+                Shader sh = Shader.Find("Custom/RoadHeightTintURP");
+                if (!sh) sh = Shader.Find("Universal Render Pipeline/Lit");
+                if (!sh) sh = Shader.Find("Universal Render Pipeline/Unlit");
                 if (!sh) sh = Shader.Find("Unlit/Color");
                 if (!sh) sh = Shader.Find("Standard");
                 asphaltMaterial = new Material(sh);
@@ -323,5 +333,33 @@ public partial class RoadFromTargetsSticky
                 if (max >= th) return true;
             }
             return false;
+        }
+
+        void TryPushHeightTintParams(MeshRenderer targetMr)
+        {
+            if (!targetMr) return;
+            var mat = targetMr.sharedMaterial; if (!mat) return;
+            if (!(mat.HasProperty(_AxisId) && mat.HasProperty(_BasePointId) && mat.HasProperty(_HMinId) && mat.HasProperty(_HMaxId))) return;
+            if (_mpb == null) _mpb = new MaterialPropertyBlock();
+            targetMr.GetPropertyBlock(_mpb);
+            Vector3 axis = (exaggerationAxis == ExaggerationAxisMode.WorldUp) ? Vector3.up : (planeLocked ? lockedUp : lastUpVec);
+            if (axis.sqrMagnitude < 1e-6f) axis = Vector3.up;
+            _mpb.SetVector(_AxisId, new Vector4(axis.x, axis.y, axis.z, 0));
+            Vector3 basePt = planeLocked ? lockedPoint : transform.position;
+            _mpb.SetVector(_BasePointId, new Vector4(basePt.x, basePt.y, basePt.z, 0));
+            float hMin = 0f, hMax = 1f;
+            if (lastCenterline != null && lastCenterline.Count > 0)
+            {
+                hMin = 1e9f; hMax = -1e9f;
+                for (int i = 0; i < lastCenterline.Count; i++)
+                {
+                    float h = Vector3.Dot(lastCenterline[i] - basePt, axis);
+                    if (h < hMin) hMin = h; if (h > hMax) hMax = h;
+                }
+                if (Mathf.Abs(hMax - hMin) < 1e-4f) { hMin -= 0.5f; hMax += 0.5f; }
+            }
+            _mpb.SetFloat(_HMinId, hMin);
+            _mpb.SetFloat(_HMaxId, hMax);
+            targetMr.SetPropertyBlock(_mpb);
         }
 }
