@@ -133,7 +133,7 @@ GameObject:
   - component: {fileID: 29666618}
   - component: {fileID: 29666617}
   m_Layer: 5
-  m_Name: ButtonControles
+  m_Name: ButtonTutorial
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -171,8 +171,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ButtonImageSwap
   buttonImage: {fileID: 29666619}
-  normalSprite: {fileID: 21300000, guid: 17a8b68bf66fe6640b6d59931d667ed5, type: 3}
-  pressedSprite: {fileID: 21300000, guid: d504423b3ff879148a596d34572a6e74, type: 3}
+  normalSprite: {fileID: 21300000, guid: 9f802e40cbb78c1458abfa5660598151, type: 3}
+  pressedSprite: {fileID: 21300000, guid: 3f0cb32c7c9d1194caee9905bc2a4d53, type: 3}
 --- !u!114 &29666618
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -249,7 +249,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 17a8b68bf66fe6640b6d59931d667ed5, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 9f802e40cbb78c1458abfa5660598151, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
