@@ -13,6 +13,7 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
 
     [Header("GameObject de los botones secundarios")]
     public GameObject menuPanel;  // Panel que contiene los 4 botones
+    public GameObject imagePanel;
 
     private bool isToggled = false;
 
@@ -26,6 +27,7 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
             // Cambia a la imagen activada y muestra los botones
             buttonImage.sprite = toggledSprite;
             menuPanel.SetActive(true);
+            imagePanel.SetActive(true);
             isToggled = true;
         }
         else
@@ -33,6 +35,7 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
             // Vuelve a la imagen normal y oculta los botones
             buttonImage.sprite = normalSprite;
             menuPanel.SetActive(false);
+            imagePanel.SetActive(false);
             isToggled = false;
         }
     }
