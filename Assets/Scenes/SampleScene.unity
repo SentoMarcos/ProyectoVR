@@ -1822,6 +1822,10 @@ PrefabInstance:
       propertyPath: moveDuration
       value: 9
       objectReference: {fileID: 0}
+    - target: {fileID: 5510940797720943338, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
+      propertyPath: vuforiaCamera
+      value: 
+      objectReference: {fileID: 1756488103}
     - target: {fileID: 5609804448436292901, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}
       propertyPath: m_Name
       value: kawasakiz650s 1
