@@ -101,8 +101,20 @@ public partial class RoadFromTargetsSticky
         // Closed flag for downstream logic
         bool isClosed = controlClosed;
 
-        // Vertical exaggeration of relief
-        if (verticalExaggeration > 0f && Mathf.Abs(verticalExaggeration - 1f) > 1e-3f)
+        // Vertical exaggeration of relief (with adaptive damping for tilted planes)
+        float usedExg = verticalExaggeration;
+        if (forceNoExaggerationWhenFrozen && planeLocked) usedExg = 1f;
+        // reduce exaggeration as plane tilts away from world up
+        float tiltDeg = Vector3.Angle(up, Vector3.up);
+        if (adaptiveTiltDamping > 0f)
+        {
+            float t = Mathf.InverseLerp(adaptiveTiltStartDeg, adaptiveTiltEndDeg, tiltDeg);
+            float damp = Mathf.Lerp(1f, 1f - Mathf.Clamp01(adaptiveTiltDamping), Mathf.Clamp01(t));
+            usedExg *= Mathf.Clamp(damp, 0f, 1f);
+        }
+        if (disableExaggerationAboveTiltDeg > 0f && tiltDeg >= disableExaggerationAboveTiltDeg) usedExg = 1f;
+
+        if (usedExg > 0f && Mathf.Abs(usedExg - 1f) > 1e-3f)
         {
             Vector3 axis = (exaggerationAxis == ExaggerationAxisMode.WorldUp) ? Vector3.up : up;
             axis = axis.sqrMagnitude < 1e-6f ? Vector3.up : axis.normalized;
@@ -177,7 +189,9 @@ public partial class RoadFromTargetsSticky
                 {
                     Vector3 vec = centerline[i] - planePoint;
                     float baseH = rawHeights[i];
-                    float hEx = baseline + (baseH - baseline) * verticalExaggeration;
+                    float hEx = baseline + (baseH - baseline) * usedExg;
+                    // clamp applied relief
+                    hEx = Mathf.Clamp(hEx, -maxAppliedReliefMeters, maxAppliedReliefMeters);
                     Vector3 flat = vec - axis * Vector3.Dot(vec, axis);
                     centerline[i] = planePoint + flat + axis * hEx;
                 }
@@ -222,7 +236,8 @@ public partial class RoadFromTargetsSticky
                 {
                     Vector3 vec = centerline[i] - planePoint;
                     float h = projH[i];
-                    float hEx = baseline + (h - baseline) * verticalExaggeration;
+                    float hEx = baseline + (h - baseline) * usedExg;
+                    hEx = Mathf.Clamp(hEx, -maxAppliedReliefMeters, maxAppliedReliefMeters);
                     Vector3 flat = vec - axis * h;
                     centerline[i] = planePoint + flat + axis * hEx;
                 }

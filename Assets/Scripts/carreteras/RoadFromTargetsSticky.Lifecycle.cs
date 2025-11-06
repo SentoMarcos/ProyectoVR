@@ -17,6 +17,10 @@ public partial class RoadFromTargetsSticky
     static readonly int _BasePointId = Shader.PropertyToID("_BasePoint");
     static readonly int _HMinId = Shader.PropertyToID("_HeightMin");
     static readonly int _HMaxId = Shader.PropertyToID("_HeightMax");
+    static readonly int _HeightContrastId = Shader.PropertyToID("_HeightContrast");
+    static readonly int _ValleyDarkenId = Shader.PropertyToID("_ValleyDarken");
+    static readonly int _CrestLightId = Shader.PropertyToID("_CrestLight");
+    static readonly int _CrestWidthId = Shader.PropertyToID("_CrestWidth");
 
         void Awake()
         {
@@ -25,23 +29,7 @@ public partial class RoadFromTargetsSticky
             mf.sharedMesh = mesh;
 
             mr = GetComponent<MeshRenderer>();
-            if (mr != null && (mr.sharedMaterial == null || mr.sharedMaterial.shader == null))
-            {
-                // Prefer our custom height-tint shader if present
-                Shader sh = Shader.Find("Custom/RoadHeightTintURP");
-                if (!sh) sh = Shader.Find("Universal Render Pipeline/Lit");
-                if (!sh) sh = Shader.Find("Universal Render Pipeline/Unlit");
-                if (!sh) sh = Shader.Find("Unlit/Color");
-                if (!sh) sh = Shader.Find("Standard");
-                asphaltMaterial = new Material(sh);
-                if (asphaltMaterial.HasProperty("_BaseColor")) asphaltMaterial.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.12f, 1f));
-                if (asphaltMaterial.HasProperty("_Color"))     asphaltMaterial.SetColor("_Color",     new Color(0.12f, 0.12f, 0.12f, 1f));
-                if (asphaltMaterial.HasProperty("_Surface"))   asphaltMaterial.SetInt("_Surface", 0); // Opaque
-                if (asphaltMaterial.HasProperty("_ZWrite"))    asphaltMaterial.SetInt("_ZWrite", 1);
-                asphaltMaterial.SetInt("_Cull", 0);
-                asphaltMaterial.SetInt("_CullMode", 0);
-                mr.sharedMaterial = asphaltMaterial;
-            }
+            EnsureRoadMaterial();
 
             // Helper para asegurar componentes (usa semántica null de Unity)
             T GetOrAdd<T>(Transform tr) where T : Component
@@ -360,6 +348,89 @@ public partial class RoadFromTargetsSticky
             }
             _mpb.SetFloat(_HMinId, hMin);
             _mpb.SetFloat(_HMaxId, hMax);
+            if (mat.HasProperty(_HeightContrastId)) _mpb.SetFloat(_HeightContrastId, 0.6f);
+            if (mat.HasProperty(_ValleyDarkenId)) _mpb.SetFloat(_ValleyDarkenId, 0.25f);
+            if (mat.HasProperty(_CrestLightId)) _mpb.SetFloat(_CrestLightId, 0.15f);
+            if (mat.HasProperty(_CrestWidthId)) _mpb.SetFloat(_CrestWidthId, 0.25f);
             targetMr.SetPropertyBlock(_mpb);
+        }
+
+        void EnsureRoadMaterial()
+        {
+            if (mr == null) return;
+            bool need = (mr.sharedMaterial == null || mr.sharedMaterial.shader == null);
+            if (!need && forceURPCompatibleMaterial)
+            {
+                // Detect magenta (broken) by sampling color if possible or missing pipeline tag
+                Shader s = mr.sharedMaterial.shader;
+                if (!s || s.name.Contains("Error") || s.name.Contains("Hidden/")) need = true;
+            }
+            // If we prefer the custom height shader, override unless it's already set
+            if (preferHeightTintShader)
+            {
+                string sn = mr.sharedMaterial && mr.sharedMaterial.shader ? mr.sharedMaterial.shader.name : "";
+                if (sn != "Custom/RoadHeightTintURP" && Shader.Find("Custom/RoadHeightTintURP")) need = true;
+            }
+            if (!need) return;
+            Shader sh = null;
+            if (preferHeightTintShader) sh = Shader.Find("Custom/RoadHeightTintURP");
+            if (!sh || !sh.isSupported) sh = Shader.Find("Universal Render Pipeline/Lit");
+            if (!sh || !sh.isSupported) sh = Shader.Find("Universal Render Pipeline/Unlit");
+            if (!sh || !sh.isSupported) sh = Shader.Find("Unlit/Color");
+            if (!sh || !sh.isSupported) sh = Shader.Find("Standard");
+            if (!sh || !sh.isSupported)
+            {
+                Debug.LogWarning("[Road] No se encontró un shader compatible URP. Usando color de respaldo.");
+                return;
+            }
+            asphaltMaterial = new Material(sh);
+            if (!asphaltMaterial.shader || !asphaltMaterial.shader.isSupported)
+            {
+                // Fallback a URP/Unlit si el shader resultante no está soportado
+                var sh2 = Shader.Find("Universal Render Pipeline/Unlit");
+                if (sh2 && sh2.isSupported) asphaltMaterial.shader = sh2; else Debug.LogWarning("[Road] Shader no soportado. URP/Unlit no disponible.");
+            }
+            if (asphaltMaterial.HasProperty("_BaseColor")) asphaltMaterial.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.12f, 1f));
+            if (asphaltMaterial.HasProperty("_Color"))     asphaltMaterial.SetColor("_Color",     new Color(0.12f, 0.12f, 0.12f, 1f));
+            if (asphaltMaterial.HasProperty("_Surface"))   asphaltMaterial.SetInt("_Surface", 0); // Opaque
+            if (asphaltMaterial.HasProperty("_ZWrite"))    asphaltMaterial.SetInt("_ZWrite", 1);
+            asphaltMaterial.SetInt("_Cull", 0);
+            asphaltMaterial.SetInt("_CullMode", 0);
+            mr.sharedMaterial = asphaltMaterial;
+
+            // Ensure children (lines/shadow) also use URP-compatible shaders to avoid magenta
+            EnsureChildMaterial(linesMr, preferUnlit: true, tintColor: laneLineColor, tex: laneLineTexture);
+            EnsureChildMaterial(shadowMr, preferUnlit: true, tintColor: shadowColor, tex: null, transparent: true);
+        }
+
+        void EnsureChildMaterial(MeshRenderer childMr, bool preferUnlit, Color? tintColor = null, Texture tex = null, bool transparent = false)
+        {
+            if (childMr == null) return;
+            var mat = childMr.sharedMaterial;
+            bool need = (mat == null || mat.shader == null);
+            if (!need && forceURPCompatibleMaterial)
+            {
+                string sn = mat.shader ? mat.shader.name : "";
+                // Common non-URP or error cases
+                if (string.IsNullOrEmpty(sn) || sn.Contains("Error") || sn.Contains("Hidden/") || sn == "Standard") need = true;
+            }
+            if (!need) return;
+            Shader sh = preferUnlit ? Shader.Find("Universal Render Pipeline/Unlit") : Shader.Find("Universal Render Pipeline/Lit");
+            if (!sh) sh = Shader.Find("Unlit/Color");
+            if (!sh) return;
+            var newMat = new Material(sh);
+            if (tintColor.HasValue)
+            {
+                if (newMat.HasProperty("_BaseColor")) newMat.SetColor("_BaseColor", tintColor.Value);
+                if (newMat.HasProperty("_Color"))     newMat.SetColor("_Color",     tintColor.Value);
+            }
+            if (tex)
+            {
+                if (newMat.HasProperty("_BaseMap")) newMat.SetTexture("_BaseMap", tex);
+                if (newMat.HasProperty("_MainTex")) newMat.SetTexture("_MainTex", tex);
+            }
+            if (newMat.HasProperty("_Surface")) newMat.SetInt("_Surface", transparent ? 1 : 0);
+            if (newMat.HasProperty("_ZWrite"))  newMat.SetInt("_ZWrite", transparent ? 0 : 1);
+            childMr.sharedMaterial = newMat;
         }
 }
