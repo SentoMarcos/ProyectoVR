@@ -99,6 +99,11 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
         [Header("Visibilidad")]
         public float surfaceOffset = 0.002f;
         public Material asphaltMaterial;
+    [Header("Material override")]
+    [Tooltip("Si el material actual no es URP o falla, forzar uno compatible para evitar el color magenta")]
+    public bool forceURPCompatibleMaterial = true;
+    [Tooltip("Preferir el shader personalizado de relieve si está disponible")]
+    public bool preferHeightTintShader = true;
 
         [Header("Marcas de carril (pintura)")]
         public bool enableLaneLines = true;
@@ -158,6 +163,18 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
     public enum ExaggerationBaselineMode { KeepAverage, KeepFirstPoint, KeepZero, KeepPlanePoint }
     [Tooltip("Punto de referencia a conservar al exagerar: media, primer punto, cero (absoluto) o el 'planePoint'.")]
     public ExaggerationBaselineMode exaggerationBaseline = ExaggerationBaselineMode.KeepAverage;
+    [Tooltip("Desactiva exageración si el plano se inclina más de este ángulo respecto a Y")]
+    [Range(0f,89f)] public float disableExaggerationAboveTiltDeg = 25f;
+    [Tooltip("Reduce de forma progresiva la exageración cuando el plano se inclina (0 = off, 1 = máximo efecto)")]
+    [Range(0f,1f)] public float adaptiveTiltDamping = 0.8f;
+    [Tooltip("Ángulo a partir del cual comienza la reducción progresiva")]
+    [Range(0f,60f)] public float adaptiveTiltStartDeg = 10f;
+    [Tooltip("Ángulo donde la exageración se reduce casi totalmente")]
+    [Range(5f,85f)] public float adaptiveTiltEndDeg = 40f;
+    [Tooltip("Límite máximo de elevación real aplicada tras exagerar (metros en eje seleccionado)")]
+    [Range(0f,5f)] public float maxAppliedReliefMeters = 1.2f;
+    [Tooltip("Al congelar, forzar verticalExaggeration = 1 (sin relieve exagerado)")]
+    public bool forceNoExaggerationWhenFrozen = true;
 
     [Header("Controles en tiempo de ejecución")]
     [Tooltip("Si está activo, ignora cualquier actualización (Update y eventos) y mantiene la carretera fija")]

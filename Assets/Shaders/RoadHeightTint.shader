@@ -12,6 +12,10 @@ Shader "Custom/RoadHeightTintURP"
         _Axis ("Axis", Vector) = (0,1,0,0)
         _BasePoint ("Base Point", Vector) = (0,0,0,0)
         _SlopeDarken ("Slope Darken", Range(0,1)) = 0.2
+    _HeightContrast ("Height Contrast", Range(0,2)) = 0.6
+    _ValleyDarken ("Valley Darken", Range(0,1)) = 0.25
+    _CrestLight ("Crest Light", Range(0,1)) = 0.15
+    _CrestWidth ("Crest Width", Range(0.01,1)) = 0.25
         _Smoothness ("Smoothness", Range(0,1)) = 0.4
         _Metallic ("Metallic", Range(0,1)) = 0
     }
@@ -43,7 +47,6 @@ Shader "Custom/RoadHeightTintURP"
             #pragma target 3.0
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
             struct Attributes
             {
@@ -63,7 +66,6 @@ Shader "Custom/RoadHeightTintURP"
                 float3 viewDirWS  : TEXCOORD3;
                 float3 tangentWS  : TEXCOORD4;
                 float3 bitangentWS: TEXCOORD5;
-                UNITY_FOG_COORDS(6)
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -81,6 +83,10 @@ Shader "Custom/RoadHeightTintURP"
                 float4 _Axis; // xyz axis
                 float4 _BasePoint; // xyz base
                 float _SlopeDarken;
+                float _HeightContrast;
+                float _ValleyDarken;
+                float _CrestLight;
+                float _CrestWidth;
                 float _Smoothness;
                 float _Metallic;
             CBUFFER_END
@@ -101,7 +107,6 @@ Shader "Custom/RoadHeightTintURP"
                 OUT.bitangentWS = bWS;
                 OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
                 OUT.viewDirWS = GetWorldSpaceViewDir(positionWS);
-                UNITY_TRANSFER_FOG(OUT, OUT.positionCS);
                 return OUT;
             }
 
@@ -115,6 +120,7 @@ Shader "Custom/RoadHeightTintURP"
 
             half4 frag (Varyings IN) : SV_Target
             {
+                // Unlit-style output with height-based modulation
                 float3 nWS = normalize(IN.normalWS);
                 if (_NormalScale > 0.001)
                     nWS = SampleNormal(IN.uv, nWS, normalize(IN.tangentWS), normalize(IN.bitangentWS));
@@ -123,42 +129,22 @@ Shader "Custom/RoadHeightTintURP"
                 float h = dot(IN.positionWS - _BasePoint.xyz, axis);
                 float hNorm = saturate((h - _HeightMin) / max(1e-5, (_HeightMax - _HeightMin)));
                 float ramp = lerp(1 - _RampStrength, 1 + _RampStrength, hNorm);
+                float contrast = (hNorm - 0.5) * _HeightContrast;
+                float heightFactor = 1 + contrast;
 
-                // Optional slight darkening by slope angle
                 float slope = 1 - saturate(dot(nWS, axis));
                 float slopeFactor = 1 - slope * _SlopeDarken;
 
+                float valley = smoothstep(0.0, 0.5, 0.5 - hNorm);
+                float crestBand = saturate((hNorm - (1.0 - _CrestWidth)) / max(1e-4, _CrestWidth));
+                float crest = crestBand;
+
                 float4 baseCol = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv) * _BaseColor;
-                baseCol.rgb *= ramp * slopeFactor;
-
-                // Lighting (URP simplified physically based)
-                SurfaceData surface;
-                surface.albedo = baseCol.rgb;
-                surface.alpha = 1;
-                surface.metallic = _Metallic;
-                surface.specular = 0; // unused in metallic workflow
-                surface.smoothness = _Smoothness;
-                surface.normalTS = float3(0,0,1); // not used
-                surface.normalWS = nWS;
-                surface.occlusion = 1;
-                surface.emission = 0;
-                surface.clearCoatMask = 0;
-                surface.clearCoatSmoothness = 0;
-
-                InputData inputData;
-                inputData.positionWS = IN.positionWS;
-                inputData.normalWS = nWS;
-                inputData.viewDirectionWS = normalize(IN.viewDirWS);
-                inputData.shadowCoord = TransformWorldToShadowCoord(IN.positionWS);
-                inputData.fogCoord = IN.fogCoord;
-                inputData.vertexLighting = 0;
-                inputData.bakedGI = SAMPLE_GI(IN.lightmapUV, 0, inputData.normalWS);
-                inputData.normalizedScreenSpaceUV = 0;
-                inputData.shadowMask = 1;
-
-                half4 col = UniversalFragmentPBR(inputData, surface);
-                col.a = 1;
-                return col;
+                baseCol.rgb *= ramp * slopeFactor * heightFactor;
+                baseCol.rgb *= lerp(1.0, 1.0 - _ValleyDarken, valley);
+                baseCol.rgb += _CrestLight * crest;
+                baseCol.a = 1;
+                return baseCol;
             }
             ENDHLSL
         }
