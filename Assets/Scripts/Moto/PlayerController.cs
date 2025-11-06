@@ -1,6 +1,10 @@
 ﻿using UnityEngine;
 using System.Collections;
 using UnityEngine.UI; // Para el texto de UI
+// Nuevo Input System
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 public class PlayerController : MonoBehaviour
 {
@@ -191,14 +195,28 @@ public class PlayerController : MonoBehaviour
         // Simulación en editor/PC con teclas (opcional, no interfiere con móvil)
         if (enableEditorSimulation && (Application.isEditor || Application.platform == RuntimePlatform.WindowsPlayer))
         {
+#if ENABLE_INPUT_SYSTEM
+            var keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                if (simulateWithKeys && !isMoving && Time.time - lastLaneChangeTime >= laneChangeCooldown)
+                {
+                    if (IsPressedThisFrame(keyboard, leftKey)) { TryChangeLane(-1); lastLaneChangeTime = Time.time; }
+                    else if (IsPressedThisFrame(keyboard, rightKey)) { TryChangeLane(+1); lastLaneChangeTime = Time.time; }
+                }
+                if (enableTuningOverlay && keyboard[Key.F1].wasPressedThisFrame)
+                    showTuningOverlay = !showTuningOverlay;
+            }
+#else
+            // Fallback a sistema antiguo si compilado sin Input System nuevo
             if (simulateWithKeys && !isMoving && Time.time - lastLaneChangeTime >= laneChangeCooldown)
             {
                 if (Input.GetKeyDown(leftKey)) { TryChangeLane(-1); lastLaneChangeTime = Time.time; }
                 else if (Input.GetKeyDown(rightKey)) { TryChangeLane(+1); lastLaneChangeTime = Time.time; }
             }
-
             if (enableTuningOverlay && Input.GetKeyDown(KeyCode.F1))
                 showTuningOverlay = !showTuningOverlay;
+#endif
         }
 
         // Control por inclinación
@@ -340,6 +358,29 @@ public class PlayerController : MonoBehaviour
         Quaternion target = Quaternion.Euler(leanVisual.localEulerAngles.x, leanVisual.localEulerAngles.y, -currentLeanAngle);
         leanVisual.localRotation = Quaternion.Slerp(leanVisual.localRotation, target, leanSmooth * Time.deltaTime);
     }
+
+#if ENABLE_INPUT_SYSTEM
+    bool IsPressedThisFrame(Keyboard keyboard, KeyCode code)
+    {
+        switch (code)
+        {
+            case KeyCode.LeftArrow: return keyboard.leftArrowKey.wasPressedThisFrame;
+            case KeyCode.RightArrow: return keyboard.rightArrowKey.wasPressedThisFrame;
+            case KeyCode.UpArrow: return keyboard.upArrowKey.wasPressedThisFrame;
+            case KeyCode.DownArrow: return keyboard.downArrowKey.wasPressedThisFrame;
+            case KeyCode.A: return keyboard.aKey.wasPressedThisFrame;
+            case KeyCode.D: return keyboard.dKey.wasPressedThisFrame;
+            case KeyCode.W: return keyboard.wKey.wasPressedThisFrame;
+            case KeyCode.S: return keyboard.sKey.wasPressedThisFrame;
+            case KeyCode.Q: return keyboard.qKey.wasPressedThisFrame;
+            case KeyCode.E: return keyboard.eKey.wasPressedThisFrame;
+            case KeyCode.F1: return keyboard[Key.F1].wasPressedThisFrame;
+            default:
+                // Fallback: intentar convertir enum por nombre (limitado)
+                return false;
+        }
+    }
+#endif
 
     float NormalizeAngle(float angle)
     {
