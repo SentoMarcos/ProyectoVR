@@ -26,6 +26,8 @@ public partial class RoadFromTargetsSticky
                 asphaltMaterial = new Material(sh);
                 if (asphaltMaterial.HasProperty("_BaseColor")) asphaltMaterial.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.12f, 1f));
                 if (asphaltMaterial.HasProperty("_Color"))     asphaltMaterial.SetColor("_Color",     new Color(0.12f, 0.12f, 0.12f, 1f));
+                if (asphaltMaterial.HasProperty("_Surface"))   asphaltMaterial.SetInt("_Surface", 0); // Opaque
+                if (asphaltMaterial.HasProperty("_ZWrite"))    asphaltMaterial.SetInt("_ZWrite", 1);
                 asphaltMaterial.SetInt("_Cull", 0);
                 asphaltMaterial.SetInt("_CullMode", 0);
                 mr.sharedMaterial = asphaltMaterial;
@@ -61,6 +63,8 @@ public partial class RoadFromTargetsSticky
                 }
                 if (laneLineMaterial.HasProperty("_BaseColor")) laneLineMaterial.SetColor("_BaseColor", laneLineColor);
                 if (laneLineMaterial.HasProperty("_Color"))     laneLineMaterial.SetColor("_Color",     laneLineColor);
+                if (laneLineMaterial.HasProperty("_Surface"))   laneLineMaterial.SetInt("_Surface", 0); // Opaque
+                if (laneLineMaterial.HasProperty("_ZWrite"))    laneLineMaterial.SetInt("_ZWrite", 1);
                 if (laneLineTexture)
                 {
                     if (laneLineMaterial.HasProperty("_BaseMap")) laneLineMaterial.SetTexture("_BaseMap", laneLineTexture);
@@ -90,8 +94,8 @@ public partial class RoadFromTargetsSticky
                     shadowMaterial = new Material(shS);
                     if (shadowMaterial.HasProperty("_BaseColor")) shadowMaterial.SetColor("_BaseColor", shadowColor);
                     if (shadowMaterial.HasProperty("_Color"))     shadowMaterial.SetColor("_Color",     shadowColor);
-                    shadowMaterial.SetInt("_Surface", 1);
-                    shadowMaterial.SetInt("_ZWrite", 0);
+                    shadowMaterial.SetInt("_Surface", 1); // Transparent
+                    shadowMaterial.SetInt("_ZWrite", 0);  // No depth write to avoid z-fighting as overlay; se ocultará al fijar
                     shadowMaterial.SetInt("_Cull", 0);
                     shadowMaterial.SetInt("_CullMode", 0);
                     shadowMaterial.renderQueue = 2990;
@@ -132,7 +136,16 @@ public partial class RoadFromTargetsSticky
         }
         void Update()
         {
-            if (manualFreeze) return;
+            // Detect toggles at runtime to perform attach/detach just once
+            if (manualFreeze)
+            {
+                EnsureFrozenState();
+                return;
+            }
+            else
+            {
+                EnsureUnfrozenState();
+            }
             if (updateIfChange) Tick();
         }
 
@@ -144,7 +157,6 @@ public partial class RoadFromTargetsSticky
                 if (logWhenNoPoints) Debug.LogWarning("[Road] No se encontró 'Targets'.");
                 return;
             }
-
             List<Transform> pts;
             if (detectionOrderManager)
             {
@@ -215,6 +227,43 @@ public partial class RoadFromTargetsSticky
                 }
             }
             lastParamHash = paramHash;
+        }
+
+        void EnsureFrozenState()
+        {
+            if (_prevParentOnFreeze == null)
+            {
+                // Primera vez: bloquear plano si procede
+                if (lockPlaneOnFreeze && !planeLocked && lastCenterline != null && lastCenterline.Count >= 3)
+                {
+                    // Calcula normal y punto a partir de la última geometría
+                    var up = lastUpVec.sqrMagnitude > 1e-6f ? lastUpVec : Vector3.up;
+                    lockedUp = up.normalized;
+                    lockedPoint = (lastCenterline != null && lastCenterline.Count > 0) ? lastCenterline[0] : transform.position;
+                    planeLocked = true;
+                }
+
+                if (detachFromParentOnFreeze)
+                {
+                    _prevParentOnFreeze = transform.parent;
+                    Transform newParent = freezeParentOverride ? freezeParentOverride : null; // a raíz si null
+                    transform.SetParent(newParent, true); // mantiene world pose
+                }
+
+                // Para evitar apariencia de overlay, desactiva sombreado mientras está congelado
+                if (shadowMr) shadowMr.enabled = false;
+            }
+        }
+
+        void EnsureUnfrozenState()
+        {
+            if (_prevParentOnFreeze != null)
+            {
+                // Restaurar el parent original cuando se des-fija
+                transform.SetParent(_prevParentOnFreeze, true);
+                _prevParentOnFreeze = null;
+            }
+            if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
         }
 
         int ComputeParamHash()

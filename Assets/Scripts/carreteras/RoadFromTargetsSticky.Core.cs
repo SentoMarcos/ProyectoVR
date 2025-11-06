@@ -149,6 +149,15 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
     [Header("Controles en tiempo de ejecución")]
     [Tooltip("Si está activo, ignora cualquier actualización (Update y eventos) y mantiene la carretera fija")]
     public bool manualFreeze = false;
+    [Tooltip("Al fijar, reparenta este objeto fuera de la cámara (o a 'freezeParentOverride') para que no siga a la cámara.")]
+    public bool detachFromParentOnFreeze = true;
+    [Tooltip("Padre explícito cuando se fija (si está vacío, pasa a ser raíz del mundo)")]
+    public Transform freezeParentOverride;
+    [Tooltip("Al fijar, bloquea el plano usando la última geometría conocida")]
+    public bool lockPlaneOnFreeze = true;
+
+    // Estado interno de freeze
+    Transform _prevParentOnFreeze;
 
         // -------------------- Estado --------------------
         MeshFilter mf;
