@@ -98,11 +98,142 @@ public partial class RoadFromTargetsSticky
             }
         }
 
+        // Closed flag for downstream logic
+        bool isClosed = controlClosed;
+
+        // Vertical exaggeration of relief
+        if (verticalExaggeration > 0f && Mathf.Abs(verticalExaggeration - 1f) > 1e-3f)
+        {
+            Vector3 axis = (exaggerationAxis == ExaggerationAxisMode.WorldUp) ? Vector3.up : up;
+            axis = axis.sqrMagnitude < 1e-6f ? Vector3.up : axis.normalized;
+
+            if (exaggerationSource == ExaggerationSource.FromRawWorld)
+            {
+                // Build a raw world-height profile sampled along the centerline param
+                // Map each centerline point to nearest original control segment and lerp raw heights
+                var rawHeights = new float[centerline.Count];
+                if (ctrl.Count >= 2)
+                {
+                    // cumulative distances for control points
+                    var ctrlCum = ComputeCumulative(ctrl);
+                    float totalCtl = ctrlCum[ctrlCum.Count - 1];
+                    var clCum = ComputeCumulative(centerline);
+                    float totalCl = clCum[clCum.Count - 1];
+                    for (int i = 0; i < centerline.Count; i++)
+                    {
+                        float s = (totalCl > 1e-6f) ? clCum[i] / totalCl : 0f;
+                        float sCtl = s * totalCtl;
+                        // find control segment
+                        int ci = 0;
+                        while (ci < ctrlCum.Count - 1 && ctrlCum[ci + 1] < sCtl) ci++;
+                        float s0 = ctrlCum[Mathf.Clamp(ci, 0, ctrlCum.Count - 1)];
+                        float s1 = ctrlCum[Mathf.Clamp(ci + 1, 0, ctrlCum.Count - 1)];
+                        float u = (s1 > s0) ? Mathf.InverseLerp(s0, s1, sCtl) : 0f;
+                        Vector3 p0 = ctrl[Mathf.Clamp(ci, 0, ctrl.Count - 1)];
+                        Vector3 p1 = ctrl[Mathf.Clamp(ci + 1, 0, ctrl.Count - 1)];
+                        // raw height is dot against axis from planePoint baseline
+                        float h0 = Vector3.Dot(p0 - planePoint, axis);
+                        float h1 = Vector3.Dot(p1 - planePoint, axis);
+                        rawHeights[i] = Mathf.Lerp(h0, h1, u);
+                    }
+
+                    // Seam continuity for closed paths: distribute end-start height delta along loop
+                    if (isClosed && centerline.Count >= 2 && totalCl > 1e-6f)
+                    {
+                        float delta = rawHeights[rawHeights.Length - 1] - rawHeights[0];
+                        for (int i = 0; i < centerline.Count; i++)
+                        {
+                            float tNorm = clCum[i] / totalCl; // 0..1
+                            rawHeights[i] -= delta * tNorm;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < centerline.Count; i++) rawHeights[i] = 0f;
+                }
+
+                // Apply with baseline handling
+                float baseline = 0f;
+                if (exaggerationBaseline == ExaggerationBaselineMode.KeepAverage)
+                {
+                    float acc = 0f; for (int i = 0; i < centerline.Count; i++) acc += rawHeights[i];
+                    baseline = (centerline.Count > 0) ? acc / centerline.Count : 0f;
+                }
+                else if (exaggerationBaseline == ExaggerationBaselineMode.KeepFirstPoint)
+                {
+                    baseline = (rawHeights.Length > 0) ? rawHeights[0] : 0f;
+                }
+                else if (exaggerationBaseline == ExaggerationBaselineMode.KeepPlanePoint)
+                {
+                    baseline = 0f; // planePoint is the baseline
+                }
+                else // KeepZero
+                {
+                    baseline = 0f;
+                }
+
+                for (int i = 0; i < centerline.Count; i++)
+                {
+                    Vector3 vec = centerline[i] - planePoint;
+                    float baseH = rawHeights[i];
+                    float hEx = baseline + (baseH - baseline) * verticalExaggeration;
+                    Vector3 flat = vec - axis * Vector3.Dot(vec, axis);
+                    centerline[i] = planePoint + flat + axis * hEx;
+                }
+            }
+            else
+            {
+                // Baseline from projected heights with seam continuity
+                var projH = new float[centerline.Count];
+                var clCum = ComputeCumulative(centerline);
+                float totalCl = clCum[clCum.Count - 1];
+                for (int i = 0; i < centerline.Count; i++) projH[i] = Vector3.Dot(centerline[i] - planePoint, axis);
+                if (isClosed && centerline.Count >= 2 && totalCl > 1e-6f)
+                {
+                    float delta = projH[projH.Length - 1] - projH[0];
+                    for (int i = 0; i < centerline.Count; i++)
+                    {
+                        float tNorm = clCum[i] / totalCl;
+                        projH[i] -= delta * tNorm;
+                    }
+                }
+
+                float baseline = 0f;
+                if (exaggerationBaseline == ExaggerationBaselineMode.KeepAverage)
+                {
+                    float acc = 0f; for (int i = 0; i < projH.Length; i++) acc += projH[i];
+                    baseline = (projH.Length > 0) ? acc / projH.Length : 0f;
+                }
+                else if (exaggerationBaseline == ExaggerationBaselineMode.KeepFirstPoint)
+                {
+                    baseline = (projH.Length > 0) ? projH[0] : 0f;
+                }
+                else if (exaggerationBaseline == ExaggerationBaselineMode.KeepPlanePoint)
+                {
+                    baseline = 0f;
+                }
+                else
+                {
+                    baseline = 0f;
+                }
+
+                for (int i = 0; i < centerline.Count; i++)
+                {
+                    Vector3 vec = centerline[i] - planePoint;
+                    float h = projH[i];
+                    float hEx = baseline + (h - baseline) * verticalExaggeration;
+                    Vector3 flat = vec - axis * h;
+                    centerline[i] = planePoint + flat + axis * hEx;
+                }
+            }
+        }
+
         if (refineByCurvature)
         {
             centerline = RefineByCurvature(centerline, up, maxCurveAngleDeg, maxSegmentLen, maxRefinePasses);
         }
-        bool isClosed = controlClosed;
+        
 
         if (isClosed && rotateSeamToLowestCurvature && centerline.Count >= 3)
         {

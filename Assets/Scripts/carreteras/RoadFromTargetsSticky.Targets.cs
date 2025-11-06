@@ -276,6 +276,8 @@ public partial class RoadFromTargetsSticky
         if (shadowMr) shadowMr.enabled = addUnderShadow;
         if (freezeRoadAfterPlaneLocked && planeLocked) return;
         GenerateRoad(controlPoints);
+            TryPushHeightTintParams(mr);
+            TryPushHeightTintParams(linesMr);
     }
 
     List<Transform> ApplyConnectMode(List<Transform> src)
