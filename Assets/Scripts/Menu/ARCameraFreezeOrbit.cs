@@ -31,7 +31,7 @@ public class ARCameraFreezeOrbit : MonoBehaviour
     void Reset()
     {
         if (!arCamera) arCamera = GetComponent<Camera>();
-        if (!road) road = FindObjectOfType<RoadFromTargetsSticky>();
+        if (!road) road = FindFirstObjectByType<RoadFromTargetsSticky>();
     }
 
     void LateUpdate()

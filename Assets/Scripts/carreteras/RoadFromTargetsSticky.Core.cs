@@ -146,6 +146,19 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
         public Color leftEdgeColor = new Color(0.9f, 0.1f, 0.1f, 0.9f);
         public Color rightEdgeColor = new Color(0.1f, 0.1f, 0.9f, 0.9f);
 
+    [Header("Relieve / Pendiente")]
+    [Tooltip("Factor para exagerar la elevación (1 = sin cambio, >1 = pendientes más marcadas)")]
+    [Range(0f, 5f)] public float verticalExaggeration = 1.0f;
+    public enum ExaggerationAxisMode { PlaneNormal, WorldUp }
+    [Tooltip("Eje usado para exagerar la altura: normal del plano o Y global")]
+    public ExaggerationAxisMode exaggerationAxis = ExaggerationAxisMode.PlaneNormal;
+    public enum ExaggerationSource { FromProjected, FromRawWorld }
+    [Tooltip("Fuente de altura para el relieve: del centroline proyectado (After projection) o de los puntos originales en mundo (recomendado)")]
+    public ExaggerationSource exaggerationSource = ExaggerationSource.FromRawWorld;
+    public enum ExaggerationBaselineMode { KeepAverage, KeepFirstPoint, KeepZero, KeepPlanePoint }
+    [Tooltip("Punto de referencia a conservar al exagerar: media, primer punto, cero (absoluto) o el 'planePoint'.")]
+    public ExaggerationBaselineMode exaggerationBaseline = ExaggerationBaselineMode.KeepAverage;
+
     [Header("Controles en tiempo de ejecución")]
     [Tooltip("Si está activo, ignora cualquier actualización (Update y eventos) y mantiene la carretera fija")]
     public bool manualFreeze = false;

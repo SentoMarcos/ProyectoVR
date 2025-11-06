@@ -23,16 +23,16 @@ public class RoadOrbitPreview : MonoBehaviour
 
     void Reset()
     {
-        if (!road) road = FindObjectOfType<RoadFromTargetsSticky>();
+        if (!road) road = FindFirstObjectByType<RoadFromTargetsSticky>();
         if (!orbitCamera)
         {
             // Try to find any secondary camera in scene (not the AR one)
-            var cams = FindObjectsOfType<Camera>();
+            var cams = FindObjectsByType<Camera>(FindObjectsSortMode.None);
             foreach (var c in cams) { if (!c.gameObject.name.ToLower().Contains("ar")) { orbitCamera = c; break; } }
         }
         if (!arCamera)
         {
-            var cams = FindObjectsOfType<Camera>();
+            var cams = FindObjectsByType<Camera>(FindObjectsSortMode.None);
             foreach (var c in cams) { if (c.gameObject.name.ToLower().Contains("ar")) { arCamera = c; break; } }
         }
     }

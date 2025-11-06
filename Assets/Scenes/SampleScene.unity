@@ -2065,6 +2065,10 @@ MonoBehaviour:
   drawEdgesGizmo: 1
   leftEdgeColor: {r: 0.9, g: 0.1, b: 0.1, a: 0.9}
   rightEdgeColor: {r: 0.1, g: 0.1, b: 0.9, a: 0.9}
+  verticalExaggeration: 3.04
+  exaggerationAxis: 0
+  exaggerationSource: 1
+  exaggerationBaseline: 0
   manualFreeze: 0
   detachFromParentOnFreeze: 1
   freezeParentOverride: {fileID: 0}
