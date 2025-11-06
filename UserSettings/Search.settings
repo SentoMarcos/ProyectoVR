@@ -1,3 +1,4 @@
+disabledIndexers = ""
 trackSelection = true
 refreshSearchWindowsInPlayMode = false
 pickerAdvancedUI = false
