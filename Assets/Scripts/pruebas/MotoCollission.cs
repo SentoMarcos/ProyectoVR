@@ -1,13 +1,15 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 
 public class MotoCollision : MonoBehaviour
 {
     [Header("Referencias")]
-    public GameObject crashEffectPrefab;  // Prefab de explosión o chispas (asígnalo en el inspector)
-    public AudioClip crashSound;          // Sonido del choque (opcional)
+    public GameObject crashEffect;
+    public AudioClip crashSound;
+    public GameObject gameOverMenuUI;  // Canvas del menú de Game Over
+    public Canvas mainUICanvas;        // Canvas principal (HUD, botones, etc.)
 
-    private bool hasCrashed = false;      // Evita múltiples colisiones
+    private bool hasCrashed = false;
 
     void OnCollisionEnter(Collision collision)
     {
@@ -23,29 +25,36 @@ public class MotoCollision : MonoBehaviour
             if (rb != null)
                 rb.linearVelocity = Vector3.zero;
 
-            // Reproducir efecto visual
-            if (crashEffectPrefab != null)
-            {
-                GameObject effect = Instantiate(crashEffectPrefab, transform.position, Quaternion.identity);
-                Destroy(effect, 3f); // destruir el efecto tras 3 segundos
-            }
+            // Activar efecto visual
+            if (crashEffect != null)
+                crashEffect.SetActive(true);
 
-            // Reproducir sonido de choque
+            // Reproducir sonido
             if (crashSound != null)
                 AudioSource.PlayClipAtPoint(crashSound, transform.position);
 
-            // Desactivar visualmente la moto (opcional)
-            GetComponent<MeshRenderer>().enabled = false;
+            // Ocultar la malla de la moto
+            MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
 
-            // Reiniciar tras 2 segundos
-            Invoke(nameof(GameOver), 2f);
+            GameOver();
         }
     }
 
     void GameOver()
     {
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        // O si prefieres mostrar UI:
-        // UIManager.Instance.ShowGameOver();
+        // Pausar el juego
+        Time.timeScale = 0f;
+
+        // Desactivar la UI principal (para que no sea interactiva)
+        if (mainUICanvas != null)
+            mainUICanvas.gameObject.SetActive(false);
+
+        // Activar el menú de Game Over
+        if (gameOverMenuUI != null)
+            gameOverMenuUI.SetActive(true);
+        else
+            Debug.LogError("El menú de Game Over no está asignado en el inspector.");
     }
 }

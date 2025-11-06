@@ -194,7 +194,7 @@ GameObject:
   - component: {fileID: -7587582596321144228}
   m_Layer: 0
   m_Name: furgoneta
-  m_TagString: Van
+  m_TagString: NPC
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
