@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 
 public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
 {
-    [Header("Referencia al componente Image del botón")]
+    [Header("Referencia al componente Image del botï¿½n")]
     public Image buttonImage;
 
     [Header("Sprites")]
@@ -13,10 +13,11 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
 
     [Header("GameObject de los botones secundarios")]
     public GameObject menuPanel;  // Panel que contiene los 4 botones
+    public GameObject imagePanel;
 
     private bool isToggled = false;
 
-    // Detecta el click del botón
+    // Detecta el click del botï¿½n
     public void OnPointerClick(PointerEventData eventData)
     {
         if (buttonImage == null || menuPanel == null) return;
@@ -26,6 +27,7 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
             // Cambia a la imagen activada y muestra los botones
             buttonImage.sprite = toggledSprite;
             menuPanel.SetActive(true);
+            imagePanel.SetActive(true);
             isToggled = true;
         }
         else
@@ -33,6 +35,7 @@ public class ToggleButtonMenu : MonoBehaviour, IPointerClickHandler
             // Vuelve a la imagen normal y oculta los botones
             buttonImage.sprite = normalSprite;
             menuPanel.SetActive(false);
+            imagePanel.SetActive(false);
             isToggled = false;
         }
     }
