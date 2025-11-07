@@ -1,56 +1,72 @@
+using System.Collections;
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 
 public class MotoCollision : MonoBehaviour
 {
     [Header("Referencias")]
-    public MotoController controller;     // Referencia al script de movimiento
-    public GameObject crashEffectPrefab;  // Prefab de explosión o chispas (asígnalo en el inspector)
-    public AudioClip crashSound;          // Sonido del choque (opcional)
+    public GameObject crashEffect;
+    public AudioClip crashSound;
+    public GameObject gameOverMenuUI;  // Canvas del menú de Game Over
+    public Canvas mainUICanvas;        // Canvas principal (HUD, botones, etc.)
 
-    private bool hasCrashed = false;      // Evita múltiples colisiones
+    private bool hasCrashed = false;
 
     void OnCollisionEnter(Collision collision)
     {
         if (hasCrashed) return;
 
-        if (collision.gameObject.CompareTag("Van"))
+        if (collision.gameObject.CompareTag("NPC"))
         {
             hasCrashed = true;
             Debug.Log("💥 ¡Has chocado! Game Over");
-
-            // Desactivar control de la moto
-            if (controller != null)
-                controller.enabled = false;
 
             // Detener movimiento
             Rigidbody rb = GetComponent<Rigidbody>();
             if (rb != null)
                 rb.linearVelocity = Vector3.zero;
 
-            // Reproducir efecto visual
-            if (crashEffectPrefab != null)
+            // Activar efecto visual
+            // Activar efecto visual en la posición actual de la moto
+            if (crashEffect != null)
             {
-                GameObject effect = Instantiate(crashEffectPrefab, transform.position, Quaternion.identity);
-                Destroy(effect, 3f); // destruir el efecto tras 3 segundos
+                crashEffect.transform.SetParent(transform); // asegúrate de que sigue siendo hijo
+                crashEffect.transform.position = transform.position;
+                crashEffect.transform.rotation = transform.rotation;
+                crashEffect.SetActive(true);
             }
 
-            // Reproducir sonido de choque
+            // Reproducir sonido
             if (crashSound != null)
                 AudioSource.PlayClipAtPoint(crashSound, transform.position);
 
-            // Desactivar visualmente la moto (opcional)
-            GetComponent<MeshRenderer>().enabled = false;
+            // Ocultar la malla de la moto
+            MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
 
-            // Reiniciar tras 2 segundos
-            Invoke(nameof(GameOver), 2f);
+            // Iniciar la secuencia de Game Over con delay
+            StartCoroutine(GameOverSequence());
         }
     }
 
-    void GameOver()
+    IEnumerator GameOverSequence()
     {
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        // O si prefieres mostrar UI:
-        // UIManager.Instance.ShowGameOver();
+
+        // Desactivar la UI principal (para que no sea interactiva)
+        if (mainUICanvas != null)
+            mainUICanvas.gameObject.SetActive(false);
+
+        // Espera 2 segundos ANTES de pausar el tiempo
+        yield return new WaitForSeconds(2f);
+
+        // Pausar el juego
+        Time.timeScale = 0f;
+
+        // Activar el menú de Game Over
+        if (gameOverMenuUI != null)
+            gameOverMenuUI.SetActive(true);
+        else
+            Debug.LogError("El menú de Game Over no está asignado en el inspector.");
     }
 }
