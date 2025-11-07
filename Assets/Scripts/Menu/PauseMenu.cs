@@ -16,7 +16,7 @@ public class PauseMenu : MonoBehaviour
     [SerializeField] private Animator[] animatorsToPause;
 
     [Header("Settings")]
-    [SerializeField] private bool enableTapToShow = true;
+    [SerializeField] private bool enableTapToShow = false;
     [Tooltip("Tiempo mínimo entre taps consecutivos")]
     [SerializeField] private float tapCooldown = 0.2f;
 
@@ -32,7 +32,7 @@ public class PauseMenu : MonoBehaviour
 
     private void Start()
     {
-        SetPauseState(false);
+        SetPauseState(true);
     }
 
     private void Update()
