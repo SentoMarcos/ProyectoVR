@@ -1,7 +1,8 @@
 fileFormatVersion: 2
-guid: ae918a24f13c5784ea89fc59b6e39038
-PrefabImporter:
+guid: 2f34479458402064aa355e6d98186952
+NativeFormatImporter:
   externalObjects: {}
+  mainObjectFileID: 2100000
   userData: 
   assetBundleName: 
   assetBundleVariant: 
@@ -10,5 +11,5 @@ AssetOrigin:
   productId: 150318
   packageName: Stylized Vehicles Pack - FREE
   packageVersion: 1.0
-  assetPath: Assets/Stylized Vehicles Pack Free/Prefabs/SportCar2.prefab
+  assetPath: Assets/Stylized Vehicles Pack Free/Materials/SpecialLight1.mat
   uploadId: 328894

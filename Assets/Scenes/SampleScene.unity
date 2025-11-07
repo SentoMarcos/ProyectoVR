@@ -3905,7 +3905,13 @@ MonoBehaviour:
   minSpacingMeters: 1
   speedRange: {x: 0.8, y: 1.6}
   reservedLaneIndex: 0
-  carPrefabs: []
+  carPrefabs:
+  - {fileID: 3332444208856464062, guid: fdff883ec6573bd4483f3bf1250b19a5, type: 3}
+  - {fileID: 7708399343271122107, guid: 8458ca6923ca27543a293c76f8fbcd96, type: 3}
+  - {fileID: 4185441078194652826, guid: 6ba5bbe604faf4944a73be10d1c14d67, type: 3}
+  - {fileID: 8016344833839689428, guid: c4921b40799c7a644b17f0bd30c88f85, type: 3}
+  - {fileID: 6067968015666707744, guid: 3b2870e5f57bdcf4690726f03b06b947, type: 3}
+  - {fileID: 1306404699476933826, guid: fcfaf5128895b4647b57623443348861, type: 3}
   carBoxSize: {x: 0.3, y: 0.15, z: 0.6}
   debugSpawnLogs: 1
 --- !u!4 &1790396661
@@ -4892,7 +4898,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7873950021731920161, guid: 6fc3849014766f64fa1a00bc623f021e, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.27892
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: 7873950021731920161, guid: 6fc3849014766f64fa1a00bc623f021e, type: 3}
       propertyPath: m_LocalPosition.z
