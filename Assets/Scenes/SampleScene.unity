@@ -2317,6 +2317,7 @@ MonoBehaviour:
   detachFromParentOnFreeze: 1
   freezeParentOverride: {fileID: 0}
   lockPlaneOnFreeze: 1
+  waitForNewDetectionsAfterReset: 0
   minRebuildPosDeltaMeters: 0.05
   outerLaneEdgeMargin: 0.1
 --- !u!1 &1046382076
@@ -3845,7 +3846,7 @@ GameObject:
   - component: {fileID: 1896571016}
   - component: {fileID: 1896571019}
   m_Layer: 5
-  m_Name: Button (1)
+  m_Name: TogglePause
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3914,9 +3915,9 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1021122967}
-        m_TargetAssemblyTypeName: RoadFromTargets, Assembly-CSharp
-        m_MethodName: ResetRoad
+      - m_Target: {fileID: 1896571019}
+        m_TargetAssemblyTypeName: GamePauseButton, Assembly-CSharp
+        m_MethodName: TogglePause
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -3973,10 +3974,16 @@ MonoBehaviour:
   m_GameObject: {fileID: 1896571013}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1e970c14dc5215c41a90ba3b6d6e3059, type: 3}
+  m_Script: {fileID: 11500000, guid: 30eecf730e9c8ca468c515f32fc50acb, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::UIRoadControls
-  road: {fileID: 1021122967}
+  m_EditorClassIdentifier: Assembly-CSharp::GamePauseButton
+  startPaused: 0
+  affectTimeScale: 1
+  affectAudio: 1
+  logTransitions: 1
+  statusText: {fileID: 0}
+  statusPrefix: Estado
+  refreshTextContinuously: 0
 --- !u!1 &1964602097 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5609804448436292901, guid: a6b3a92282d3f40479f26f2f2a188fef, type: 3}

@@ -119,7 +119,7 @@ public class TrafficAgent : MonoBehaviour
         }
 
         // aplicar suavizado
-        float tLerp = Time.deltaTime / Mathf.Max(0.01f, speedLerpTime);
+    float tLerp = GameTime.DeltaTime / Mathf.Max(0.01f, speedLerpTime);
         _currentSpeed = Mathf.Lerp(_currentSpeed, Mathf.Max(0.05f, target), tLerp);
     }
 
@@ -127,7 +127,7 @@ public class TrafficAgent : MonoBehaviour
     {
         if (_laneChangeCooldownTimer > 0f)
         {
-            _laneChangeCooldownTimer -= Time.deltaTime;
+            _laneChangeCooldownTimer -= GameTime.DeltaTime;
             return;
         }
         // Si el carril reservado es el mismo que uso, intenta moverte para dejarlo libre
@@ -219,7 +219,7 @@ public class TrafficAgent : MonoBehaviour
         if (_laneChangeCooldownTimer > 0f) return;
         if (!road || manager == null) return;
         // evento de Poisson: probabilidad por segundo
-        if (Random.value > randomLaneChangeRate * Time.deltaTime) return;
+    if (Random.value > randomLaneChangeRate * GameTime.DeltaTime) return;
         int lanes = road.LaneCountPublic;
         if (lanes <= 1) return;
         // intenta moverte a cualquiera de los dos vecinos si está libre

@@ -98,7 +98,7 @@ public class RoadLaneFollower : MonoBehaviour
     {
         if (!road || !road.PathReady) return;
 
-        float dt = Mathf.Max(0f, Time.deltaTime);
+    float dt = Mathf.Max(0f, GameTime.DeltaTime);
         // Avanza
         float effSpeed = (requireAccelerate && !accelerating) ? 0f : Mathf.Max(0f, speed);
         currentS += effSpeed * dt;
