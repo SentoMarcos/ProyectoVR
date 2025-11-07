@@ -3039,9 +3039,9 @@ MonoBehaviour:
   road: {fileID: 1021122967}
   button: {fileID: 1508054314}
   buttonImage: {fileID: 1508054315}
-  normalSprite: {fileID: 21300000, guid: a6a6cd5bb445b6d45bfb25fa43cde884, type: 3}
-  toggledSprite: {fileID: 21300000, guid: 09a14e1e4837b99489df47c68d6cef2f, type: 3}
-  alsoToggleUpdateIfChange: 1
+  normalSprite: {fileID: 21300000, guid: 6af47da0fce013c40965e1d611c88ab0, type: 3}
+  toggledSprite: {fileID: 21300000, guid: 5ff0efd7820e65a40a719076ee67e062, type: 3}
+  alsoToggleUpdateIfChange: 0
   rememberPreviousUpdateIfChange: 1
 --- !u!114 &1508054314
 MonoBehaviour:
@@ -3131,7 +3131,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: a6a6cd5bb445b6d45bfb25fa43cde884, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 6af47da0fce013c40965e1d611c88ab0, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -4477,9 +4477,9 @@ MonoBehaviour:
     m_ColorMultiplier: 1
     m_FadeDuration: 0.1
   m_SpriteState:
-    m_HighlightedSprite: {fileID: 21300000, guid: f5445f529d5f067429d4652ab53beac5, type: 3}
-    m_PressedSprite: {fileID: 21300000, guid: f5445f529d5f067429d4652ab53beac5, type: 3}
-    m_SelectedSprite: {fileID: 21300000, guid: f5445f529d5f067429d4652ab53beac5, type: 3}
+    m_HighlightedSprite: {fileID: 21300000, guid: dc55c692272cb9c4f824b83ea9cefc38, type: 3}
+    m_PressedSprite: {fileID: 21300000, guid: dc55c692272cb9c4f824b83ea9cefc38, type: 3}
+    m_SelectedSprite: {fileID: 21300000, guid: dc55c692272cb9c4f824b83ea9cefc38, type: 3}
     m_DisabledSprite: {fileID: 0}
   m_AnimationTriggers:
     m_NormalTrigger: Normal
@@ -4524,7 +4524,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: a80532b1528fb4c4fbe070f59aaf52e9, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 8c5baf3b07abcad42857a2a27a0333ca, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
