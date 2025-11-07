@@ -2,113 +2,65 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.EventSystems;
 
-/// <summary>
-/// Gestiona el menú de pausa y sus funcionalidades asociadas.
-/// </summary>
-public class PauseMenu : MonoBehaviour
+public class pauseMenu1 : MonoBehaviour
 {
-    [Header("UI References")]
-    [SerializeField] private GameObject pauseMenuUI;
+    public static bool GameIsPaused = false;
+    public GameObject pauseMenuUi;          // Assign your menu Canvas or panel here
+    public GameObject arObject;             // The 3D AR object you want to pause/resume
+    public Behaviour[] scriptsToPause;      // Any scripts controlling motion/animation
+    public Animator[] animatorsToPause;     // Optional animators to pause
+    private bool waitingForTapToShow = false;
     
-    [Header("AR Elements")]
-    [SerializeField] private GameObject arObject;
-    [SerializeField] private Behaviour[] scriptsToPause;
-    [SerializeField] private Animator[] animatorsToPause;
 
-    [Header("Settings")]
-    [SerializeField] private bool enableTapToShow = false;
-    [Tooltip("Tiempo mínimo entre taps consecutivos")]
-    [SerializeField] private float tapCooldown = 0.2f;
-
-    private bool isPaused;
-    private bool waitingForTapToShow;
-    private float lastTapTime;
-    private EventSystem eventSystem;
-
-    private void Awake()
+    void Start()
     {
-        eventSystem = EventSystem.current;
+        ShowMenu(true);
     }
 
-    private void Start()
+    void Update()
     {
-        SetPauseState(true);
-    }
-
-    private void Update()
-    {
-        if (!isPaused && waitingForTapToShow)
+        // Allow tapping anywhere to reopen menu when in free view
+        if (!GameIsPaused && waitingForTapToShow)
         {
-            CheckForTapToShow();
-        }
-    }
-
-    private void CheckForTapToShow()
-    {
-        if (Input.touchCount <= 0 || Input.GetTouch(0).phase != TouchPhase.Began) return;
-        
-        float timeSinceLastTap = Time.time - lastTapTime;
-        if (timeSinceLastTap < tapCooldown) return;
-
-        var touch = Input.GetTouch(0);
-        if (eventSystem && !eventSystem.IsPointerOverGameObject(touch.fingerId))
-        {
-            lastTapTime = Time.time;
-            SetPauseState(true);
-        }
-    }
-
-    private void SetPauseState(bool paused)
-    {
-        isPaused = paused;
-        
-        if (pauseMenuUI)
-        {
-            pauseMenuUI.SetActive(paused);
-        }
-
-        // Pausar/reanudar scripts
-        foreach (var script in scriptsToPause)
-        {
-            if (script)
+            if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
             {
-                script.enabled = !paused;
+                if (!EventSystem.current || !EventSystem.current.IsPointerOverGameObject(Input.GetTouch(0).fingerId))
+                    ShowMenu(true);
             }
         }
-
-        // Pausar/reanudar animadores
-        foreach (var animator in animatorsToPause)
-        {
-            if (animator)
-            {
-                animator.speed = paused ? 0f : 1f;
-            }
-        }
-
-        waitingForTapToShow = !paused && enableTapToShow;
     }
 
-    #region Public Menu Actions
-
-    public void Resume() => SetPauseState(false);
-
-    public void Pause() => SetPauseState(true);
-
-    public void ShowInstructions() => LoadScene("Instrucciones");
-
-    public void ShowTrailer() => LoadScene("Trailer");
-
-    public void ShowModel() => LoadScene("Modelo");
-
-    public void ReturnToMenu() => LoadScene("SampleScene");
-
-    public void EnableFreeView()
+    public void Resume()
     {
-        SetPauseState(false);
-        waitingForTapToShow = true;
+        ShowMenu(false);
     }
 
-    public void QuitGame()
+    public void Pause()
+    {
+        ShowMenu(true);
+    }
+
+    public void instructions()
+    {
+        SceneManager.LoadScene("Instrucciones");
+    }
+
+    public void trailer()
+    {
+        SceneManager.LoadScene("Trailer");
+    }
+
+    public void model()
+    {
+        SceneManager.LoadScene("Modelo");
+    }
+
+    public void ReturnToMenu()
+    {
+        SceneManager.LoadScene("SampleScene");
+    }
+
+    public void quit()
     {
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
@@ -117,12 +69,29 @@ public class PauseMenu : MonoBehaviour
 #endif
     }
 
-    #endregion
-
-    private void LoadScene(string sceneName)
+    public void freeView()
     {
-        // Asegurarse de que el tiempo está normal antes de cambiar escena
-        Time.timeScale = 1f;
-        SceneManager.LoadScene(sceneName);
+        // Hide the menu and enable tap-to-show behavior
+        ShowMenu(false);
+        waitingForTapToShow = true;
+    }
+
+    // --- Helper to pause/resume everything ---
+    void ShowMenu(bool show)
+    {
+        if (pauseMenuUi != null)
+            pauseMenuUi.SetActive(show);
+
+        GameIsPaused = show;
+
+        // Pause/resume any scripts controlling AR object motion
+        foreach (var s in scriptsToPause)
+            if (s != null) s.enabled = !show;
+
+        // Pause/resume any animators
+        foreach (var a in animatorsToPause)
+            if (a != null) a.speed = show ? 0f : 1f;
+
+        waitingForTapToShow = !show;  // If menu is hidden, enable tap detection
     }
 }
