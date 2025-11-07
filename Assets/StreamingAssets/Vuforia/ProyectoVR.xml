@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QCARConfig>
+  <Tracking>
+    <ImageTarget name="cartas-proyectoD" size="1.000000 1.400508" />
+    <ImageTarget name="cartas-proyectoC" size="1.000000 1.400508" />
+    <ImageTarget name="cartas-proyectoB" size="1.000000 1.400508" />
+    <ImageTarget name="cartas-proyectoA" size="1.000000 1.400508" />
+    <ImageTarget name="carta-Moto" size="1.000000 1.400508" />
+  </Tracking>
+</QCARConfig>
