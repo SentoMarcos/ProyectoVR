@@ -10,6 +10,10 @@ public partial class RoadFromTargetsSticky
         bool planeLocked = false;
         Vector3 lockedUp = Vector3.up;
         Vector3 lockedPoint = Vector3.zero;
+    // Tras un reset, suprime la regeneración hasta detectar al menos dos puntos válidos
+    bool suppressUntilNewDetection = false;
+    int _detectionsSinceReset = 0;
+    bool _waitingNewDetections = false;
 
     // Height tint property block (for Custom/RoadHeightTintURP or compatible)
     MaterialPropertyBlock _mpb; // lazy-inited
@@ -126,11 +130,101 @@ public partial class RoadFromTargetsSticky
         {
             if (detectionOrderManager != null && regenerateOnOrderChanged)
                 detectionOrderManager.OnOrderChanged += Tick;
+            if (detectionOrderManager != null)
+                detectionOrderManager.OnNewDetection += HandleNewDetectionAfterReset;
         }
         void OnDisable()
         {
             if (detectionOrderManager != null)
                 detectionOrderManager.OnOrderChanged -= Tick;
+            if (detectionOrderManager != null)
+                detectionOrderManager.OnNewDetection -= HandleNewDetectionAfterReset;
+        }
+
+    // Reinicia completamente la carretera y su estado interno
+    [ContextMenu("Reset Road")]
+    public void ResetRoad()
+        {
+            // Desbloquear plano y parenting
+            planeLocked = false;
+            lockedUp = Vector3.up;
+            lockedPoint = Vector3.zero;
+            if (_prevParentOnFreeze != null)
+            {
+                transform.SetParent(_prevParentOnFreeze, true);
+                _prevParentOnFreeze = null;
+            }
+            manualFreeze = false;
+
+            // Limpiar caches y geometría
+            lastUsedControlPoints.Clear();
+            lastCenterline.Clear();
+            lastCumulative = new List<float>();
+            lastClosed = false;
+            lastTotalWidth = 0f;
+            lastParamHash = 0;
+            lastCtrlPositionsCache.Clear();
+
+            // Limpiar mallas
+            if (mesh != null) { mesh.Clear(); }
+            if (linesMesh != null) { linesMesh.Clear(); }
+            if (shadowMesh != null) { shadowMesh.Clear(); }
+
+            // Destruir proxies virtuales y reconstruir lista
+            if (virtualRoot != null)
+            {
+                var toDel = new List<GameObject>();
+                foreach (Transform c in virtualRoot) if (c) toDel.Add(c.gameObject);
+                foreach (var go in toDel)
+                {
+                    if (Application.isPlaying) Destroy(go); else DestroyImmediate(go);
+                }
+            }
+            proxies.Clear();
+
+            // Limpiar estado del DetectionOrderManager (orden y puntos congelados) para permitir nueva colocación
+            if (detectionOrderManager != null)
+            {
+                detectionOrderManager.ClearOrder();
+                detectionOrderManager.ClearFrozen();
+                detectionOrderManager.RebuildEntries();
+            }
+
+            BuildProxyList();
+
+            // Reforzar material compatible
+            EnsureRoadMaterial();
+
+            // Comportamiento tras reset controlado por flag inspector
+            if (waitForNewDetectionsAfterReset)
+            {
+                suppressUntilNewDetection = true;
+                _waitingNewDetections = true;
+                _detectionsSinceReset = 0;
+                if (mr) mr.enabled = false;
+                if (shadowMr) shadowMr.enabled = false;
+                if (linesMr) linesMr.enabled = false;
+            }
+            else
+            {
+                // Fallback inmediato: si ya hay suficientes puntos, regenerar al instante; si no, esperar como antes
+                if (HasAtLeastTwoValidPoints())
+                {
+                    if (mr) mr.enabled = !hideRoadMesh;
+                    if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
+                    if (linesMr) linesMr.enabled = enableLaneLines && !hideRoadMesh;
+                    Tick();
+                }
+                else
+                {
+                    suppressUntilNewDetection = true;
+                    _waitingNewDetections = true;
+                    _detectionsSinceReset = 0;
+                    if (mr) mr.enabled = false;
+                    if (shadowMr) shadowMr.enabled = false;
+                    if (linesMr) linesMr.enabled = false;
+                }
+            }
         }
         void Update()
         {
@@ -143,6 +237,26 @@ public partial class RoadFromTargetsSticky
             else
             {
                 EnsureUnfrozenState();
+            }
+            // Si venimos de un reset, esperar a nuevas detecciones explícitas o, en su defecto,
+            // reactivar cuando haya al menos dos puntos válidos disponibles
+            if (suppressUntilNewDetection)
+            {
+                if (mr) mr.enabled = false;
+                if (shadowMr) shadowMr.enabled = false;
+                if (linesMr) linesMr.enabled = false;
+                // Fallback: algunos flujos no emiten OnNewDetection (p.ej. sin Vuforia o con polling)
+                // Sólo aplicarlo si NO estamos esperando explícitamente nuevas detecciones
+                if (!waitForNewDetectionsAfterReset && HasAtLeastTwoValidPoints())
+                {
+                    suppressUntilNewDetection = false;
+                    _waitingNewDetections = false;
+                    if (mr) mr.enabled = !hideRoadMesh;
+                    if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
+                    if (linesMr) linesMr.enabled = enableLaneLines && !hideRoadMesh;
+                    Tick();
+                }
+                return;
             }
             if (updateIfChange) Tick();
         }
@@ -432,5 +546,55 @@ public partial class RoadFromTargetsSticky
             if (newMat.HasProperty("_Surface")) newMat.SetInt("_Surface", transparent ? 1 : 0);
             if (newMat.HasProperty("_ZWrite"))  newMat.SetInt("_ZWrite", transparent ? 0 : 1);
             childMr.sharedMaterial = newMat;
+        }
+
+        void HandleNewDetectionAfterReset(Transform _)
+        {
+            if (!_waitingNewDetections) return;
+            _detectionsSinceReset++;
+            // Esperar al menos 2 nuevas detecciones para poder reconstruir un tramo
+            if (_detectionsSinceReset >= 2)
+            {
+                suppressUntilNewDetection = false;
+                _waitingNewDetections = false;
+                if (mr) mr.enabled = !hideRoadMesh;
+                if (shadowMr) shadowMr.enabled = addUnderShadow && !hideRoadMesh;
+                if (linesMr) linesMr.enabled = enableLaneLines && !hideRoadMesh;
+                Tick();
+            }
+        }
+
+        bool HasAtLeastTwoValidPoints()
+        {
+            if (!targetsRoot) return false;
+            // Prioridad: manager (congelados u ordenados)
+            if (detectionOrderManager)
+            {
+                if (useFrozenPointsFromManager)
+                {
+                    var frozen = detectionOrderManager.GetFrozenPoints();
+                    if (frozen != null && frozen.Count >= 2) return true;
+                }
+                var ordered = detectionOrderManager.GetOrderedPoints();
+                if (ordered != null && ordered.Count >= 2) return true;
+            }
+
+            // Sin manager o sin suficientes, comprobar proxies reales/estables
+            if (useRealPointsDirectly)
+            {
+                var pts = GetRealProxyPointsOrdered();
+                if (pts != null && pts.Count >= 2) return true;
+                if (targetsRoot.childCount != proxies.Count) BuildProxyList();
+                UpdateProxiesSticky();
+                var backup = GetStableProxyPointsOrdered();
+                return backup != null && backup.Count >= 2;
+            }
+            else
+            {
+                if (targetsRoot.childCount != proxies.Count) BuildProxyList();
+                UpdateProxiesSticky();
+                var stable = GetStableProxyPointsOrdered();
+                return stable != null && stable.Count >= 2;
+            }
         }
 }
