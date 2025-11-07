@@ -59,8 +59,9 @@ public class MouseTouchRotateScale : MonoBehaviour
     public void ResetBike()
     {
         cachedTransform.localScale = originalScale;
-        cachedTransform.rotation = Quaternion.identity;
+        cachedTransform.rotation = Quaternion.Euler(-90f, 0f, 0f);
     }
+
 
 #if ENABLE_INPUT_SYSTEM
     // ---------------- Mouse (New Input System) ----------------

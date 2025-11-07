@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Spawner y gestor de tráfico muy simple. Genera cajas "coches" en distintos carriles
-/// y gestiona consultas de vecindad para car-following y cambios de carril.
+/// Spawner y gestor de tráfico. Genera coches en distintos carriles
+/// y gestiona su movimiento y comportamiento.
 /// </summary>
 public class TrafficManager : MonoBehaviour
 {
@@ -18,12 +18,14 @@ public class TrafficManager : MonoBehaviour
     public Vector2 speedRange = new Vector2(0.8f, 1.6f);
     public int reservedLaneIndex = 0; // carril para la moto
 
-    [Header("Prefab (si se deja vacío, se crea una caja)")]
-    public GameObject carPrefab;
+    [Header("Prefabs de coches")]
+    [Tooltip("Puedes asignar varios modelos de coche aquí")]
+    public GameObject[] carPrefabs;
     public Vector3 carBoxSize = new Vector3(0.3f, 0.15f, 0.6f);
 
-    readonly List<TrafficAgent> agents = new();
-    bool _spawned;
+    private readonly List<TrafficAgent> agents = new();
+    private bool _spawned;
+
     [Header("Debug")]
     public bool debugSpawnLogs = false;
 
@@ -35,6 +37,7 @@ public class TrafficManager : MonoBehaviour
             if (debugSpawnLogs) Debug.Log("[Traffic] No road found at Start");
             return;
         }
+
         if (road.PathReady)
         {
             SpawnInitial();
@@ -60,30 +63,42 @@ public class TrafficManager : MonoBehaviour
     {
         int lanes = Mathf.Max(1, road.LaneCountPublic);
         float len = road.PathLength;
+
         for (int i = 0; i < initialCars; i++)
         {
-            int lane = Random.Range(0, lanes); // permitimos usar reservado; se apartarán si la moto llega
+            int lane = Random.Range(0, lanes);
             float s = Random.Range(0f, Mathf.Max(1f, len - 0.1f));
-            CreateCar(lane, s, Random.Range(speedRange.x, speedRange.y));
+            float speed = Random.Range(speedRange.x, speedRange.y);
+            CreateCar(lane, s, speed);
         }
-        if (debugSpawnLogs) Debug.Log($"[Traffic] Spawned {initialCars} cars. lanes={lanes} len={len:F2}");
+
+        if (debugSpawnLogs)
+            Debug.Log($"[Traffic] Spawned {initialCars} cars. lanes={lanes} len={len:F2}");
     }
 
     void CreateCar(int laneIndex, float startS, float desiredSpeed)
     {
         GameObject go;
-        if (carPrefab)
+
+        // ✅ Selecciona un prefab aleatorio si hay varios
+        if (carPrefabs != null && carPrefabs.Length > 0)
         {
-            go = Instantiate(carPrefab, transform);
+            GameObject chosenPrefab = carPrefabs[Random.Range(0, carPrefabs.Length)];
+            go = Instantiate(chosenPrefab, transform);
         }
         else
         {
+            // Si no hay prefabs, crea una caja por defecto
             go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.transform.SetParent(transform, false);
-            var coll = go.GetComponent<Collider>(); if (coll) Destroy(coll);
+            var coll = go.GetComponent<Collider>();
+            if (coll) Destroy(coll);
             go.transform.localScale = carBoxSize;
         }
 
+        go.tag = "NPC";
+
+        // Añadir componentes
         var follower = go.AddComponent<RoadLaneFollower>();
         follower.road = road;
         follower.applyInLateUpdate = true;
