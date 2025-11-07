@@ -3,22 +3,22 @@ using UnityEngine.UI;
 
 public class RoadFreezeToggleUI : MonoBehaviour
 {
-    [Header("References")]
+    [Header("Referencias")]
     public RoadFromTargetsSticky road;
     public Button button;
-    public Text labelLegacy; // For Text (Legacy)
-    public TMPro.TextMeshProUGUI labelTMP; // For TextMeshPro
+    public Image buttonImage;
 
-    [Header("Labels")]
-    public string labelFreeze = "Fijar";     // when update is ON, button action will Freeze
-    public string labelUnfreeze = "Desfijar"; // when frozen, button action will Unfreeze
+    [Header("Sprites")]
+    public Sprite normalSprite;   // Imagen por defecto
+    public Sprite toggledSprite;  // Imagen cuando se activa
 
-    [Header("Behavior")]
+    [Header("Comportamiento de la carretera")]
     [Tooltip("Además de activar 'manualFreeze', alterna el checkbox 'Update If Change' en el componente para que se vea en el inspector.")]
     public bool alsoToggleUpdateIfChange = true;
     [Tooltip("Recupera el valor previo de 'Update If Change' al desfijar. Si no hay valor previo, vuelve a true.")]
     public bool rememberPreviousUpdateIfChange = true;
-    bool? cachedPrevUpdateIfChange;
+
+    private bool? cachedPrevUpdateIfChange;
 
     void Reset()
     {
@@ -32,37 +32,40 @@ public class RoadFreezeToggleUI : MonoBehaviour
             road = Object.FindObjectOfType<RoadFromTargetsSticky>();
 #endif
         }
+        if (!buttonImage)
+            buttonImage = GetComponent<Image>();
     }
 
     void Awake()
     {
         if (!button) button = GetComponent<Button>();
         if (button) button.onClick.AddListener(OnClick);
-        RefreshLabel();
-    }
-
-    void OnEnable()
-    {
-        RefreshLabel();
     }
 
     public void OnClick()
     {
-        if (!road) { RefreshLabel(); return; }
+        if (!road) return;
+
         bool isFrozen = road.manualFreeze || (alsoToggleUpdateIfChange && !road.updateIfChange);
+
         if (!isFrozen)
         {
-            // Fijar: activa manualFreeze y opcionalmente desactiva updateIfChange
+            // Fijar carretera
             road.manualFreeze = true;
             if (alsoToggleUpdateIfChange)
             {
-                if (rememberPreviousUpdateIfChange) cachedPrevUpdateIfChange = road.updateIfChange;
+                if (rememberPreviousUpdateIfChange)
+                    cachedPrevUpdateIfChange = road.updateIfChange;
                 road.updateIfChange = false;
             }
+
+            // Cambiar imagen a la activada
+            if (buttonImage && toggledSprite)
+                buttonImage.sprite = toggledSprite;
         }
         else
         {
-            // Desfijar: desactiva manualFreeze y restaura updateIfChange
+            // Desfijar carretera
             road.manualFreeze = false;
             if (alsoToggleUpdateIfChange)
             {
@@ -71,15 +74,10 @@ public class RoadFreezeToggleUI : MonoBehaviour
                 else
                     road.updateIfChange = true;
             }
-        }
-        RefreshLabel();
-    }
 
-    void RefreshLabel()
-    {
-        bool frozen = road && (road.manualFreeze || (alsoToggleUpdateIfChange && !road.updateIfChange));
-        string text = frozen ? labelUnfreeze : labelFreeze;
-        if (labelTMP) labelTMP.text = text;
-        if (labelLegacy) labelLegacy.text = text;
+            // Volver a la imagen normal
+            if (buttonImage && normalSprite)
+                buttonImage.sprite = normalSprite;
+        }
     }
 }
