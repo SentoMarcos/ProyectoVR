@@ -65,3 +65,9 @@ crashlytics-build.properties
 ProyectoVR_BackUpThisFolder_ButDontShipItWithYourGame/il2cppOutput/
 
 *.dll
+
+.utmp/RelWithDebInfo/2c24u533/arm64-v8a/.cmake/api/v1/query/client-agp/
+
+.utmp/RelWithDebInfo/2c24u533/arm64-v8a/CMakeFiles/
+
+ProyectoVR_BackUpThisFolder_ButDontShipItWithYourGame/Managed/

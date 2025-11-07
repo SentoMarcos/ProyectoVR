@@ -3905,15 +3905,9 @@ MonoBehaviour:
   minSpacingMeters: 1
   speedRange: {x: 0.8, y: 1.6}
   reservedLaneIndex: 0
-  carPrefabs:
-  - {fileID: 7573186547737297904, guid: 9d4e0598264b20549a42ad650855cda7, type: 3}
-  - {fileID: 3332444208856464062, guid: fdff883ec6573bd4483f3bf1250b19a5, type: 3}
-  - {fileID: 3533850413383273023, guid: 8f545f11de77186449aa352aa5d38fe9, type: 3}
-  - {fileID: 6287319582821184461, guid: 77653068d1cd5254c82b4e0048353235, type: 3}
-  - {fileID: 5686074402418921634, guid: 3c5b9150bbe75ad458fb7e4b20dc7b79, type: 3}
-  - {fileID: 5686074402418921634, guid: 3c5b9150bbe75ad458fb7e4b20dc7b79, type: 3}
+  carPrefabs: []
   carBoxSize: {x: 0.3, y: 0.15, z: 0.6}
-  debugSpawnLogs: 0
+  debugSpawnLogs: 1
 --- !u!4 &1790396661
 Transform:
   m_ObjectHideFlags: 0
@@ -4872,6 +4866,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1964602117}
     m_Modifications:
+    - target: {fileID: 6950711749955788104, guid: 6fc3849014766f64fa1a00bc623f021e, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950711749955788104, guid: 6fc3849014766f64fa1a00bc623f021e, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: ac7c08f2b664f2b428189ab78163b269, type: 2}
     - target: {fileID: 7873950021731920161, guid: 6fc3849014766f64fa1a00bc623f021e, type: 3}
       propertyPath: m_LocalScale.x
       value: 0.100251436
