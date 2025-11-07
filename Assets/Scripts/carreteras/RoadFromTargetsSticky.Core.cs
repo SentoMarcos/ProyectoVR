@@ -1,0 +1,223 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Serialization;
+
+// Nota: sin namespace para no romper referencias de Unity al componente existente
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+public partial class RoadFromTargetsSticky : MonoBehaviour
+{
+        // -------------------- Inspector (escena / entrada) --------------------
+        [Header("Raíz de targets en la escena")]
+        public Transform targetsRoot;
+        public string pointChildName = "_tgt_point";
+
+        [Header("Actualización")]
+        [FormerlySerializedAs("updateEveryFrame")]
+        [Tooltip("Actualiza automáticamente solo si detecta cambios (posiciones o parámetros)")]
+        public bool updateIfChange = true;
+        [Range(4, 64)] public int samplesPerSegment = 24;
+        [Tooltip("Usar directamente los _tgt_point de 'Targets' sin lógica de estabilidad/visibilidad.")]
+        public bool useRealPointsDirectly = true;
+        [Tooltip("Si se asigna, usará el orden de detección proporcionado por este manager.")]
+        public DetectionOrderManager detectionOrderManager;
+        [Tooltip("Usar puntos CONGELADOS del manager (estables en mundo) en lugar de los _tgt_point vivos.")]
+        public bool useFrozenPointsFromManager = true;
+        [Tooltip("Regenerar la carretera inmediatamente cuando cambie el orden en el manager.")]
+        public bool regenerateOnOrderChanged = true;
+        [Tooltip("Si hay ≥3 puntos, conecta el último con el primero (circuito cerrado). El nuevo detectado pasa a ser el último.")]
+        public bool closeLoopWhenAtLeast3 = true;
+
+        public enum ConnectMode { Sequential, FirstToLastOnly, LastTwoOnly }
+        [Header("Modo de conexión entre puntos")]
+        public ConnectMode connectMode = ConnectMode.LastTwoOnly;
+
+        [Header("Plano y UVs")]
+        public bool flattenToTargetsPlane = true;
+        public bool lockPlaneAfterTwoStable = true;
+        public float uvTilesPerMeter = 0.15f;
+        public bool ignoreTargetRotations = false;
+        public bool derivePlaneFromPointOrientation = true;
+        public enum OrientationAxis { Up, Forward, Right }
+        public OrientationAxis planeNormalAxis = OrientationAxis.Up;
+        public bool autoChoosePlaneAxis = true;
+        public bool snapNormalToWorldUp = true;
+        [Range(0f, 60f)] public float snapUpMaxAngle = 30f;
+
+        [Header("Altura constante (opcional)")]
+        public bool forceTargetsSameHeight = false;
+        public enum HeightReferenceMode { FirstPoint, AveragePoints, ThisObjectY, CustomY }
+        public HeightReferenceMode heightReferenceMode = HeightReferenceMode.AveragePoints;
+        public Transform heightReferenceTransform;
+        public float customHeightY = 0f;
+
+        [Header("Carretera (ancho auto en AR)")]
+        public int laneCount = 1;
+        public enum WidthMode { AbsoluteMeters, FitToSpacing }
+        public WidthMode widthMode = WidthMode.FitToSpacing;
+        public float laneWidthMeters = 3f;
+        [Range(0.05f, 0.6f)] public float laneWidthFraction = 0.08f;
+        [Range(0.2f, 1.0f)] public float maxWidthVsMinSeg = 0.5f;
+        [Range(0.005f, 2f)] public float minTotalWidthMeters = 0.05f;
+        [Range(0f, 2f)] public float maxTotalWidthMeters = 0.08f;
+
+        [Header("Ancho adaptativo en curvas")]
+        public bool adaptiveWidthInCurves = true;
+        [Range(0.2f, 1f)] public float minWidthScaleAtSharpTurn = 0.5f;
+        [Range(5f, 80f)] public float angleForMinWidth = 50f;
+        [Range(0f, 40f)] public float angleStartNarrow = 15f;
+
+        [Header("Curvas y joins")]
+        public bool refineByCurvature = true;
+        [Range(1f, 30f)] public float maxCurveAngleDeg = 6f;
+        [Range(0.01f, 0.25f)] public float maxSegmentLen = 0.03f;
+        [Range(1, 4)] public int maxRefinePasses = 3;
+        public bool useMiterJoins = false;
+        [Range(1f, 5f)] public float miterLimit = 1.05f;
+        [Range(5f, 80f)] public float bevelAtAngleDeg = 18f;
+        public bool useRoundedJoins = true;
+        [Range(1, 12)] public int roundSegmentsPer90 = 5;
+        public bool rotateSeamToLowestCurvature = true;
+
+        [Header("Pegajosidad / Anti-parpadeo")]
+        public int minVisibleFramesToUpdate = 1;
+        public int minInvisibleFramesToHold = 2;
+        public float maxReacquireJump = 0.15f;
+        [Range(0f, 1f)] public float updateLerp = 0.35f;
+        public float minDeltaToUpdate = 0.003f;
+
+        [Header("Filtro de temblor de mano")]
+        public bool tremorFilter = true;
+        [Range(0f, 0.05f)] public float tremorDeadzoneMeters = 0.01f;
+        [Range(0, 10)] public int tremorHoldFrames = 2;
+        [Range(0f, 0.1f)] public float tremorMaxStepMeters = 0.02f;
+        [Range(0f, 1f)] public float tremorLerp = 0.25f;
+
+        [Header("Congelar tras estabilidad")]
+        public bool freezeProxyAfterFirstStable = false;
+        public bool freezeRoadAfterPlaneLocked = false;
+
+        [Header("Visibilidad")]
+        public float surfaceOffset = 0.002f;
+        public Material asphaltMaterial;
+    [Header("Material override")]
+    [Tooltip("Si el material actual no es URP o falla, forzar uno compatible para evitar el color magenta")]
+    public bool forceURPCompatibleMaterial = true;
+    [Tooltip("Preferir el shader personalizado de relieve si está disponible")]
+    public bool preferHeightTintShader = true;
+
+        [Header("Marcas de carril (pintura)")]
+        public bool enableLaneLines = true;
+        public Material laneLineMaterial;
+        public Texture2D laneLineTexture;
+        public Color laneLineColor = Color.white;
+        public float lineUvTilesPerMeter = 0.5f;
+        [Range(0.005f, 0.2f)] public float centerLineWidthMeters = 0.06f;
+        [Range(0.005f, 0.2f)] public float edgeLineWidthMeters = 0.08f;
+        public bool drawEdgeLines = true;
+        public bool drawCenterLines = true;
+        public bool centerLinesDashed = true;
+        [Range(0.02f, 2f)] public float dashLengthMeters = 0.35f;
+        [Range(0.02f, 2f)] public float gapLengthMeters = 0.35f;
+        public float dashOffsetMeters = 0f;
+        [Range(0f, 0.01f)] public float linesLiftOffsetMeters = 0.0015f;
+
+        [Header("Sombra bajo la carretera")]
+        public bool addUnderShadow = true;
+        [Range(0f, 0.5f)] public float shadowExtraWidthMeters = 0.02f;
+        [Range(-0.01f, 0.01f)] public float shadowUnderOffset = -0.0015f;
+        public Color shadowColor = new Color(0f, 0f, 0f, 0.35f);
+        public Material shadowMaterial;
+
+        [Header("Vuforia (requisito de tracking)")]
+        public bool requireVuforiaTracking = true;
+        public bool countDetectedAsTracked = true;
+
+        [Header("Debug")]
+        public bool logWhenNoPoints = false;
+
+        [Header("Testing y Gizmos")]
+        public bool hideRoadMesh = false;
+        public bool drawUsedPolylineGizmo = true;
+        public Color usedPolylineColor = new Color(0f, 1f, 1f, 0.9f);
+        public bool drawLoopClosureGizmo = true;
+        public Color loopClosureColor = new Color(1f, 0.9f, 0f, 0.9f);
+        public bool drawGizmosWhenNotSelected = true;
+
+        [Header("Gizmos de carriles (debug)")]
+        public bool drawLaneCenterlinesGizmo = true;
+        [Range(1, 10)] public int gizmoLaneSampleStep = 1;
+        public Color laneCenterColor = new Color(0.1f, 0.8f, 0.1f, 0.9f);
+        public bool drawEdgesGizmo = true;
+        public Color leftEdgeColor = new Color(0.9f, 0.1f, 0.1f, 0.9f);
+        public Color rightEdgeColor = new Color(0.1f, 0.1f, 0.9f, 0.9f);
+
+    [Header("Relieve / Pendiente")]
+    [Tooltip("Factor para exagerar la elevación (1 = sin cambio, >1 = pendientes más marcadas)")]
+    [Range(0f, 5f)] public float verticalExaggeration = 1.0f;
+    public enum ExaggerationAxisMode { PlaneNormal, WorldUp }
+    [Tooltip("Eje usado para exagerar la altura: normal del plano o Y global")]
+    public ExaggerationAxisMode exaggerationAxis = ExaggerationAxisMode.PlaneNormal;
+    public enum ExaggerationSource { FromProjected, FromRawWorld }
+    [Tooltip("Fuente de altura para el relieve: del centroline proyectado (After projection) o de los puntos originales en mundo (recomendado)")]
+    public ExaggerationSource exaggerationSource = ExaggerationSource.FromRawWorld;
+    public enum ExaggerationBaselineMode { KeepAverage, KeepFirstPoint, KeepZero, KeepPlanePoint }
+    [Tooltip("Punto de referencia a conservar al exagerar: media, primer punto, cero (absoluto) o el 'planePoint'.")]
+    public ExaggerationBaselineMode exaggerationBaseline = ExaggerationBaselineMode.KeepAverage;
+    [Tooltip("Desactiva exageración si el plano se inclina más de este ángulo respecto a Y")]
+    [Range(0f,89f)] public float disableExaggerationAboveTiltDeg = 25f;
+    [Tooltip("Reduce de forma progresiva la exageración cuando el plano se inclina (0 = off, 1 = máximo efecto)")]
+    [Range(0f,1f)] public float adaptiveTiltDamping = 0.8f;
+    [Tooltip("Ángulo a partir del cual comienza la reducción progresiva")]
+    [Range(0f,60f)] public float adaptiveTiltStartDeg = 10f;
+    [Tooltip("Ángulo donde la exageración se reduce casi totalmente")]
+    [Range(5f,85f)] public float adaptiveTiltEndDeg = 40f;
+    [Tooltip("Límite máximo de elevación real aplicada tras exagerar (metros en eje seleccionado)")]
+    [Range(0f,5f)] public float maxAppliedReliefMeters = 1.2f;
+    [Tooltip("Al congelar, forzar verticalExaggeration = 1 (sin relieve exagerado)")]
+    public bool forceNoExaggerationWhenFrozen = true;
+
+    [Header("Controles en tiempo de ejecución")]
+    [Tooltip("Si está activo, ignora cualquier actualización (Update y eventos) y mantiene la carretera fija")]
+    public bool manualFreeze = false;
+    [Tooltip("Al fijar, reparenta este objeto fuera de la cámara (o a 'freezeParentOverride') para que no siga a la cámara.")]
+    public bool detachFromParentOnFreeze = true;
+    [Tooltip("Padre explícito cuando se fija (si está vacío, pasa a ser raíz del mundo)")]
+    public Transform freezeParentOverride;
+    [Tooltip("Al fijar, bloquea el plano usando la última geometría conocida")]
+    public bool lockPlaneOnFreeze = true;
+
+    // Estado interno de freeze
+    Transform _prevParentOnFreeze;
+
+        [Header("Reset")]
+        [Tooltip("Si está activo, tras Reset no se regenera hasta que haya nuevas detecciones. Si está desactivado, se regenera inmediatamente si hay ≥2 puntos disponibles.")]
+        public bool waitForNewDetectionsAfterReset = false;
+
+        // -------------------- Estado --------------------
+        MeshFilter mf;
+        Mesh mesh;
+        MeshRenderer mr;
+        MeshFilter linesMf; MeshRenderer linesMr; Mesh linesMesh;
+        MeshFilter shadowMf; MeshRenderer shadowMr; Mesh shadowMesh;
+
+        readonly List<Transform> lastUsedControlPoints = new();
+        List<Vector3> lastCenterline = new();
+        List<float> lastCumulative = new();
+        Vector3 lastUpVec = Vector3.up;
+        bool lastClosed = false;
+        float lastTotalWidth = 0f;
+        int lastHash = 0;
+
+        [Header("Actualización condicional")]
+        [Range(0f, 0.2f)] public float minRebuildPosDeltaMeters = 0.05f;
+        List<Vector3> lastCtrlPositionsCache = new();
+        int lastParamHash = 0;
+
+        public bool PathReady => lastCenterline != null && lastCenterline.Count >= 2;
+    public float PathLength => (lastCumulative != null && lastCumulative.Count > 0) ? lastCumulative[lastCumulative.Count - 1] : 0f;
+        public Vector3 PathUp => lastUpVec;
+        public bool IsClosedPath => lastClosed;
+        public int LaneCountPublic => laneCount;
+        public float TotalWidthPublic => lastTotalWidth;
+    [Range(0f, 0.5f)] public float outerLaneEdgeMargin = 0.1f;
+}

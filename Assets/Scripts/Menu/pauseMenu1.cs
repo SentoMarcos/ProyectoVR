@@ -14,7 +14,7 @@ public class pauseMenu1 : MonoBehaviour
 
     void Start()
     {
-        ShowMenu(true);
+        ShowMenu(false);
     }
 
     void Update()

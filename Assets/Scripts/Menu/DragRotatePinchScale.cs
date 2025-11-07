@@ -20,6 +20,7 @@ public class MouseTouchRotateScale : MonoBehaviour
     public float pinchZoomSpeed = 0.01f;
 
     private Vector3 originalScale;
+    Transform cachedTransform;
 
 #if !ENABLE_INPUT_SYSTEM
     private Vector3 lastMousePos;
@@ -28,7 +29,8 @@ public class MouseTouchRotateScale : MonoBehaviour
 
     void Awake()
     {
-        originalScale = transform.localScale;
+        cachedTransform = transform;
+        originalScale = cachedTransform.localScale;
 
 #if ENABLE_INPUT_SYSTEM
         EnhancedTouchSupport.Enable();
@@ -56,8 +58,8 @@ public class MouseTouchRotateScale : MonoBehaviour
     // ✅ Reset scale (UI button)
     public void ResetBike()
     {
-        transform.localScale = originalScale;
-        transform.rotation = Quaternion.identity;
+        cachedTransform.localScale = originalScale;
+        cachedTransform.rotation = Quaternion.identity;
     }
 
 #if ENABLE_INPUT_SYSTEM
@@ -71,15 +73,14 @@ public class MouseTouchRotateScale : MonoBehaviour
         if (mouse.leftButton.isPressed)
         {
             Vector2 delta = mouse.delta.ReadValue();
-            transform.Rotate(-delta.y * rotateSpeedMouse, delta.x * rotateSpeedMouse, 0, Space.World);
+            ApplyRotation(delta, rotateSpeedMouse);
         }
 
         // Scroll to scale
         if (mouse.scroll.IsActuated())
         {
             float s = mouse.scroll.ReadValue().y * wheelZoomSpeed;
-            Vector3 newScale = transform.localScale + Vector3.one * s;
-            transform.localScale = ClampScale(newScale);
+            ApplyScaleDelta(s);
         }
     }
 
@@ -94,7 +95,7 @@ public class MouseTouchRotateScale : MonoBehaviour
             if (t.phase == ETouchPhase.Moved)
             {
                 Vector2 d = t.delta;
-                transform.Rotate(-d.y * rotateSpeedTouch, d.x * rotateSpeedTouch, 0, Space.World);
+                ApplyRotation(d, rotateSpeedTouch);
             }
         }
         else if (count >= 2)
@@ -106,8 +107,7 @@ public class MouseTouchRotateScale : MonoBehaviour
             float curr = Vector2.Distance(t0.screenPosition, t1.screenPosition);
             float delta = (curr - prev) * pinchZoomSpeed;
 
-            Vector3 newScale = transform.localScale + Vector3.one * delta;
-            transform.localScale = ClampScale(newScale);
+            ApplyScaleDelta(delta);
         }
     }
 
@@ -126,12 +126,11 @@ public class MouseTouchRotateScale : MonoBehaviour
         {
             Vector3 delta = Input.mousePosition - lastMousePos;
             lastMousePos = Input.mousePosition;
-            transform.Rotate(-delta.y * rotateSpeedMouse, delta.x * rotateSpeedMouse, 0, Space.World);
+            ApplyRotation(delta, rotateSpeedMouse);
         }
 
         float scroll = Input.mouseScrollDelta.y * wheelZoomSpeed;
-        Vector3 newScale = transform.localScale + Vector3.one * scroll;
-        transform.localScale = ClampScale(newScale);
+        ApplyScaleDelta(scroll);
     }
 
     // --------------- Touch Legacy Input ---------------
@@ -141,7 +140,7 @@ public class MouseTouchRotateScale : MonoBehaviour
         {
             Touch t = Input.GetTouch(0);
             if (t.phase == TouchPhase.Moved)
-                transform.Rotate(-t.deltaPosition.y * rotateSpeedTouch, t.deltaPosition.x * rotateSpeedTouch, 0, Space.World);
+                ApplyRotation(t.deltaPosition, rotateSpeedTouch);
         }
         else if (Input.touchCount >= 2)
         {
@@ -152,15 +151,28 @@ public class MouseTouchRotateScale : MonoBehaviour
             float curr = (t0.position - t1.position).magnitude;
             float delta = (curr - prev) * pinchZoomSpeed;
 
-            Vector3 newScale = transform.localScale + Vector3.one * delta;
-            transform.localScale = ClampScale(newScale);
+            ApplyScaleDelta(delta);
         }
     }
 #endif
 
-    Vector3 ClampScale(Vector3 s)
+    // Helper: apply uniform scale delta and clamp it
+    void ApplyScaleDelta(float delta)
     {
-        float clamped = Mathf.Clamp(s.x, minScale, maxScale);
-        return new Vector3(clamped, clamped, clamped);
+        float newS = cachedTransform.localScale.x + delta;
+        newS = Mathf.Clamp(newS, minScale, maxScale);
+        cachedTransform.localScale = Vector3.one * newS;
+    }
+
+    // Helper: rotate by delta vector (x,y) and speed
+    void ApplyRotation(Vector2 delta, float speed)
+    {
+        cachedTransform.Rotate(-delta.y * speed, delta.x * speed, 0, Space.World);
+    }
+
+    // Overload for Vector3 inputs (legacy mouse)
+    void ApplyRotation(Vector3 delta, float speed)
+    {
+        ApplyRotation(new Vector2(delta.x, delta.y), speed);
     }
 }
