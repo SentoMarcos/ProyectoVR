@@ -189,6 +189,10 @@ public partial class RoadFromTargetsSticky : MonoBehaviour
     // Estado interno de freeze
     Transform _prevParentOnFreeze;
 
+        [Header("Reset")]
+        [Tooltip("Si está activo, tras Reset no se regenera hasta que haya nuevas detecciones. Si está desactivado, se regenera inmediatamente si hay ≥2 puntos disponibles.")]
+        public bool waitForNewDetectionsAfterReset = false;
+
         // -------------------- Estado --------------------
         MeshFilter mf;
         Mesh mesh;
