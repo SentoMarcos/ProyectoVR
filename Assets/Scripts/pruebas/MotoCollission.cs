@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -26,8 +27,14 @@ public class MotoCollision : MonoBehaviour
                 rb.linearVelocity = Vector3.zero;
 
             // Activar efecto visual
+            // Activar efecto visual en la posición actual de la moto
             if (crashEffect != null)
+            {
+                crashEffect.transform.SetParent(transform); // asegúrate de que sigue siendo hijo
+                crashEffect.transform.position = transform.position;
+                crashEffect.transform.rotation = transform.rotation;
                 crashEffect.SetActive(true);
+            }
 
             // Reproducir sonido
             if (crashSound != null)
@@ -38,18 +45,23 @@ public class MotoCollision : MonoBehaviour
             if (meshRenderer != null)
                 meshRenderer.enabled = false;
 
-            GameOver();
+            // Iniciar la secuencia de Game Over con delay
+            StartCoroutine(GameOverSequence());
         }
     }
 
-    void GameOver()
+    IEnumerator GameOverSequence()
     {
-        // Pausar el juego
-        Time.timeScale = 0f;
 
         // Desactivar la UI principal (para que no sea interactiva)
         if (mainUICanvas != null)
             mainUICanvas.gameObject.SetActive(false);
+
+        // Espera 2 segundos ANTES de pausar el tiempo
+        yield return new WaitForSeconds(2f);
+
+        // Pausar el juego
+        Time.timeScale = 0f;
 
         // Activar el menú de Game Over
         if (gameOverMenuUI != null)

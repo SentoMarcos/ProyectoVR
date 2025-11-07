@@ -1,7 +1,8 @@
 fileFormatVersion: 2
-guid: 3c5b9150bbe75ad458fb7e4b20dc7b79
-PrefabImporter:
+guid: fb2ab18a8d946034fa188ace09bfe055
+NativeFormatImporter:
   externalObjects: {}
+  mainObjectFileID: 2100000
   userData: 
   assetBundleName: 
   assetBundleVariant: 
@@ -10,5 +11,5 @@ AssetOrigin:
   productId: 150318
   packageName: Stylized Vehicles Pack - FREE
   packageVersion: 1.0
-  assetPath: Assets/Stylized Vehicles Pack Free/Prefabs/Sedan1.prefab
+  assetPath: Assets/Stylized Vehicles Pack Free/Materials/SpecialLight2.mat
   uploadId: 328894
