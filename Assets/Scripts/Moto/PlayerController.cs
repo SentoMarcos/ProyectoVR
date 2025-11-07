@@ -132,19 +132,21 @@ public class PlayerController : MonoBehaviour
     if (gyroSupported) Input.gyro.enabled = true;
     }
 
-    IEnumerator Start()
-    {
-        SafePlay(animIdle);
-        yield return StartCoroutine(WaitForRoadReady());
-        CenterLaneOnStart();
-        ready = true;
-        laneFollower?.AccelerateOn();
-        
-        // Inicializar calibración de inclinación
-        StartCoroutine(InitializeTiltCalibration());
-        if (useDeviceMotion && accelSupported)
-            StartCoroutine(CalibrateAccelerometer());
-    }
+IEnumerator Start()
+{
+    SafePlay(animIdle);
+    yield return StartCoroutine(WaitForRoadReady());
+    CenterLaneOnStart();
+    ready = true;
+    laneFollower?.AccelerateOn();
+    
+    // Inicializar calibración de inclinación
+    StartCoroutine(InitializeTiltCalibration());
+    if (useDeviceMotion && accelSupported)
+        StartCoroutine(CalibrateAccelerometer());
+}
+
+
 
     IEnumerator InitializeTiltCalibration()
     {

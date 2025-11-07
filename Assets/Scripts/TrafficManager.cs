@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -11,12 +12,18 @@ public class TrafficManager : MonoBehaviour
     public RoadFromTargetsSticky road;
     [Tooltip("Seguidor de la moto para tener en cuenta su carril y posición")]
     public RoadLaneFollower motoFollower;
+    [Tooltip("Transform de la moto (opcional), usado para gizmos si no hay follower")]
+    public Transform motoTransform;
 
     [Header("Spawn")]
     public int initialCars = 6;
     public float minSpacingMeters = 1.0f;
     public Vector2 speedRange = new Vector2(0.8f, 1.6f);
     public int reservedLaneIndex = 0; // carril para la moto
+    [Tooltip("Radio (metros) alrededor de la moto donde NO se spawnearán NPCs al inicio")]
+    public float spawnExclusionRadiusMeters = 5f;
+    [Tooltip("Si la pista es muy corta comparada con el radio, permite desactivar la exclusión")]
+    public bool allowDisableExclusionOnShortTrack = true;
 
     [Header("Prefabs de coches")]
     [Tooltip("Puedes asignar varios modelos de coche aquí")]
@@ -40,7 +47,8 @@ public class TrafficManager : MonoBehaviour
 
         if (road.PathReady)
         {
-            SpawnInitial();
+            if (debugSpawnLogs) Debug.Log("[Traffic] Road ready. Spawning next frame to sync with moto.");
+            StartCoroutine(SpawnInitialDeferred());
             _spawned = true;
         }
         else if (debugSpawnLogs)
@@ -53,23 +61,70 @@ public class TrafficManager : MonoBehaviour
     {
         if (!_spawned && road && road.PathReady)
         {
-            if (debugSpawnLogs) Debug.Log("[Traffic] Road became ready. Spawning cars now.");
-            SpawnInitial();
+            if (debugSpawnLogs) Debug.Log("[Traffic] Road became ready. Spawning next frame to sync with moto.");
+            StartCoroutine(SpawnInitialDeferred());
             _spawned = true;
         }
+    }
+
+    IEnumerator SpawnInitialDeferred()
+    {
+        // Espera un frame para asegurar que RoadLaneFollower de la moto actualice su CurrentS
+        yield return null;
+        SpawnInitial();
     }
 
     void SpawnInitial()
     {
         int lanes = Mathf.Max(1, road.LaneCountPublic);
         float len = road.PathLength;
+        bool exclusionActive = spawnExclusionRadiusMeters > 0.01f && (!allowDisableExclusionOnShortTrack || len > spawnExclusionRadiusMeters * 1.2f);
+        float motoS = -1f;
+        if (motoFollower)
+        {
+            motoS = motoFollower.CurrentS;
+        }
 
         for (int i = 0; i < initialCars; i++)
         {
-            int lane = Random.Range(0, lanes);
-            float s = Random.Range(0f, Mathf.Max(1f, len - 0.1f));
-            float speed = Random.Range(speedRange.x, speedRange.y);
-            CreateCar(lane, s, speed);
+            bool placed = false;
+            const int MAX_TRIES_PER_CAR = 12;
+            for (int attempt = 0; attempt < MAX_TRIES_PER_CAR; attempt++)
+            {
+                int lane = Random.Range(0, lanes);
+                float s = Random.Range(0f, Mathf.Max(1f, len - 0.1f));
+
+                // 1) Evitar spawn cerca de la moto (distancia sobre el camino)
+                if (exclusionActive && motoS >= 0f)
+                {
+                    float gap = Mathf.Abs(s - motoS);
+                    if (road.IsClosedPath && gap > len * 0.5f) gap = len - gap;
+                    if (gap < spawnExclusionRadiusMeters)
+                    {
+                        continue; // demasiado cerca de la moto
+                    }
+                    // Opción adicional: si es el mismo carril, también evita dentro del radio
+                    if (motoFollower && lane == motoFollower.laneIndex && gap < spawnExclusionRadiusMeters)
+                    {
+                        continue;
+                    }
+                }
+
+                // 2) Respetar separación mínima entre coches ya creados en ese carril
+                if (!IsLaneSegmentClear(lane, s, Mathf.Max(0f, minSpacingMeters), Mathf.Max(0f, minSpacingMeters), null))
+                {
+                    continue; // muy cerca de otro coche
+                }
+
+                float speed = Random.Range(speedRange.x, speedRange.y);
+                CreateCar(lane, s, speed);
+                placed = true;
+                break;
+            }
+            if (!placed && debugSpawnLogs)
+            {
+                Debug.Log($"[Traffic] No se pudo ubicar el coche {i} respetando exclusión y separación. Se omite.");
+            }
         }
 
         if (debugSpawnLogs)
@@ -216,5 +271,19 @@ public class TrafficManager : MonoBehaviour
         float r = x % m;
         if (r < 0f) r += m;
         return r;
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        if (spawnExclusionRadiusMeters <= 0.01f) return;
+        Transform refT = null;
+        if (motoFollower) refT = motoFollower.transform;
+        else if (motoTransform) refT = motoTransform;
+        if (!refT) return;
+
+        Gizmos.color = new Color(1f, 0.3f, 0.1f, 0.3f);
+        Gizmos.DrawSphere(refT.position, spawnExclusionRadiusMeters);
+        Gizmos.color = new Color(1f, 0.1f, 0.1f, 0.9f);
+        Gizmos.DrawWireSphere(refT.position, spawnExclusionRadiusMeters);
     }
 }
